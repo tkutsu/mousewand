@@ -106,6 +106,7 @@ struct Client {
     fullscreen: u8,
     class: String,
     title: String,
+    #[serde(rename = "focusHistoryID")]
     focus_history_id: i64,
 }
 
@@ -166,8 +167,11 @@ impl Backend for Hyprland {
         }))
     }
 
+    /// Lua-config Hyprland (0.55+) takes Lua dispatchers; older versions
+    /// take the legacy `focuswindow` form.
     fn focus(&self, w: &Window) -> anyhow::Result<()> {
-        self.dispatch_checked(&format!("focuswindow address:{}", w.id))
+        self.dispatch_checked(&format!("hl.dsp.focus({{ window = \"address:{}\" }})", w.id))
+            .or_else(|lua| self.dispatch_checked(&format!("focuswindow address:{}", w.id)).map_err(|_| lua))
     }
 
     fn monitors(&self) -> anyhow::Result<Vec<Monitor>> {

@@ -1,0 +1,25 @@
+# ~/.config/wisp/config.toml
+# Every setting is optional; these are the defaults.
+
+trigger = "middle"     # middle, side, extra, forward, back or task
+threshold = 8          # motion before a press becomes a gesture (≈ px)
+hold_ms = 300          # holding still this long makes it a normal press
+min_segment = 30       # shorter strokes are ignored as noise
+devices = []           # only grab mice whose name contains one of these
+
+# Global gestures, for every window. Per-app files in apps/ override them.
+# Strokes: U D L R, plus diagonals as numpad digits: 7 ↖  9 ↗  1 ↙  3 ↘
+
+[[gesture]]
+stroke = "UD"
+action = { command = "notify-send wisp \"gesture over $WISP_CLASS\"" }
+
+# `dispatch` is passed to Hyprland as is. Lua-config Hyprland (0.55+)
+# takes Lua dispatchers; older versions take e.g. "workspace e+1".
+[[gesture]]
+stroke = "RU"
+action = { dispatch = 'hl.dsp.focus({ workspace = "e+1" })' }
+
+[[gesture]]
+stroke = "LU"
+action = { dispatch = 'hl.dsp.focus({ workspace = "e-1" })' }
