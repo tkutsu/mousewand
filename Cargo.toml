@@ -1,6 +1,9 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# wisp-settings embeds its built web UI, so it builds on its own:
+# pnpm -C crates/wisp-settings/ui build, then cargo build -p wisp-settings.
+default-members = ["crates/wisp-core", "crates/wisp-input", "crates/wisp-backend", "crates/wisp-overlay", "crates/wisp"]
 
 [workspace.package]
 version = "0.1.0"

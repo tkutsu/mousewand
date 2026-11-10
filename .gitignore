@@ -1,3 +1,5 @@
 /target
 /.claude/
 node_modules/
+/crates/wisp-settings/ui/dist/
+/crates/wisp-settings/gen/

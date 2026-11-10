@@ -162,10 +162,18 @@ fn window_at(backend: &dyn Backend, cursor: anyhow::Result<Point>) -> Window {
 }
 
 /// Runs a shell command without waiting for it. It sees the window in
-/// `WISP_CLASS` and `WISP_TITLE`.
+/// `WISP_CLASS` and `WISP_TITLE`, and wisp's own directory comes first in
+/// `PATH`, so `wisp-settings` is found even when a service's PATH is bare.
 fn spawn(command: &str, window: &Window) -> anyhow::Result<()> {
+    let mut path: Vec<_> = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.to_path_buf()))
+        .into_iter()
+        .collect();
+    path.extend(std::env::var_os("PATH").iter().flat_map(std::env::split_paths));
     let mut child = Command::new("sh")
         .args(["-c", command])
+        .env("PATH", std::env::join_paths(path)?)
         .env("WISP_CLASS", &window.class)
         .env("WISP_TITLE", &window.title)
         .stdin(Stdio::null())
