@@ -324,13 +324,31 @@ impl Config {
     }
 
     /// The gestures for a window of `class`: its app's, then the global ones
-    /// the app doesn't override.
+    /// the app doesn't override, then the settings gesture unless something
+    /// else uses its stroke.
     pub fn gestures_for(&self, class: &str) -> Vec<Gesture> {
         let app = self
             .apps
             .iter()
             .find(|app| app.classes.iter().any(|c| c.eq_ignore_ascii_case(class)));
-        merged(app.map_or(&[], |a| &a.gestures), &self.gestures)
+        let mut gestures = merged(app.map_or(&[], |a| &a.gestures), &self.gestures);
+        let settings = settings_gesture();
+        if !gestures.iter().any(|g| g.input == settings.input) {
+            gestures.push(settings);
+        }
+        gestures
+    }
+}
+
+/// The stroke that opens the settings app on the window under the cursor.
+pub const SETTINGS_STROKE: &str = "UDU";
+
+/// Opens `wisp-settings`, which reads the window class from `WISP_CLASS`.
+fn settings_gesture() -> Gesture {
+    Gesture {
+        input: Input::Stroke(SETTINGS_STROKE.parse().expect("a valid stroke")),
+        kind: Kind::Oneshot,
+        action: Action::Command("wisp-settings".into()),
     }
 }
 
@@ -490,6 +508,20 @@ mod tests {
                 step: 80.0
             }
         );
+    }
+
+    #[test]
+    fn settings_gesture_is_built_in_unless_taken() {
+        let opens_settings = |c: &Config, class: &str| {
+            c.gestures_for(class)
+                .iter()
+                .any(|g| g.input == stroke("UDU") && g.action == Action::Command("wisp-settings".into()))
+        };
+        assert!(opens_settings(&config(), "kitty"));
+        let taken = "[[gesture]]\nstroke = \"UDU\"\naction = { keys = \"a\" }";
+        let c = Config::parse("", &[("kitty".into(), taken.into())]).unwrap();
+        assert!(!opens_settings(&c, "kitty"));
+        assert!(opens_settings(&c, "firefox"));
     }
 
     #[test]

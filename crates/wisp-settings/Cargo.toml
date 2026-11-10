@@ -1,0 +1,21 @@
+[package]
+name = "wisp-settings"
+description = "The settings app for wisp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# Serve the built UI from the binary. Turn off to load the Vite dev server.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+wisp-core.workspace = true
+serde.workspace = true
+toml.workspace = true
+tauri = { version = "2", features = [] }
+toml_edit = "0.25"

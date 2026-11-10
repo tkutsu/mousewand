@@ -66,6 +66,20 @@ A repeat or hold stroke fires the moment it's recognized, so no other stroke may
 
 App gestures override global ones with the same input. Saving a file reloads it; a broken file is logged and the last good config stays in use. See [`examples/`](examples) for a fuller setup. To find a window's class: `hyprctl clients`.
 
+## Settings app
+
+Draw ↑↓↑ (`UDU`) over any window to open `wisp-settings` on that window's app: its gestures, presets for common apps, and a Record button that captures a shortcut as you press it. The "Everywhere" tab holds the trigger, theme and global gestures. A gesture of your own on `UDU` replaces this one.
+
+The config files stay the source of truth: the app edits only the settings and gesture lists, keeps your comments, and refuses to save anything the daemon would reject. It's a Tauri app, built separately:
+
+```fish
+pnpm -C crates/wisp-settings/ui install
+pnpm -C crates/wisp-settings/ui build
+cargo install --path crates/wisp-settings
+```
+
+`wisp-settings --class firefox` opens it on an app by hand.
+
 ## Themes
 
 ```toml
