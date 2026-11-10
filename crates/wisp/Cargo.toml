@@ -9,6 +9,7 @@ license.workspace = true
 wisp-core.workspace = true
 wisp-input.workspace = true
 wisp-backend.workspace = true
+wisp-overlay.workspace = true
 anyhow.workspace = true
 log.workspace = true
 env_logger = "0.11"

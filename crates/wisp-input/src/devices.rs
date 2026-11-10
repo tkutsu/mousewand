@@ -2,8 +2,8 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::Sender;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -50,7 +50,9 @@ pub fn watch(filter: Vec<String>, tx: Sender<Msg>) -> anyhow::Result<()> {
 }
 
 fn is_event_node(path: &Path) -> bool {
-    path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("event"))
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with("event"))
 }
 
 fn is_mouse(dev: &RawDevice, filter: &[String]) -> bool {
@@ -58,12 +60,20 @@ fn is_mouse(dev: &RawDevice, filter: &[String]) -> bool {
     let moves = dev
         .supported_relative_axes()
         .is_some_and(|axes| axes.contains(RelativeAxisCode::REL_X) && axes.contains(RelativeAxisCode::REL_Y));
-    let clicks = dev.supported_keys().is_some_and(|keys| keys.contains(KeyCode::BTN_LEFT));
+    let clicks = dev
+        .supported_keys()
+        .is_some_and(|keys| keys.contains(KeyCode::BTN_LEFT));
     let wanted = filter.is_empty() || filter.iter().any(|f| name.contains(f.as_str()));
     name != VIRTUAL_NAME && moves && clicks && wanted
 }
 
-fn try_grab(path: PathBuf, mut dev: RawDevice, filter: &[String], tx: &Sender<Msg>, grabbed: &Arc<Mutex<HashSet<PathBuf>>>) {
+fn try_grab(
+    path: PathBuf,
+    mut dev: RawDevice,
+    filter: &[String],
+    tx: &Sender<Msg>,
+    grabbed: &Arc<Mutex<HashSet<PathBuf>>>,
+) {
     if !is_mouse(&dev, filter) || !grabbed.lock().unwrap().insert(path.clone()) {
         return;
     }

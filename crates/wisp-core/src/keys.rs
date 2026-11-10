@@ -21,7 +21,10 @@ impl FromStr for Combo {
             .split('+')
             .map(|name| code(name.trim()).ok_or_else(|| format!("unknown key {name:?} in {s:?}")))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Combo { text: s.to_string(), codes })
+        Ok(Combo {
+            text: s.to_string(),
+            codes,
+        })
     }
 }
 
@@ -104,7 +107,12 @@ fn single_char(name: &str) -> Option<u16> {
     if chars.next().is_some() {
         return None;
     }
-    const ROWS: [(&str, u16); 4] = [("1234567890", 2), ("qwertyuiop", 16), ("asdfghjkl", 30), ("zxcvbnm", 44)];
+    const ROWS: [(&str, u16); 4] = [
+        ("1234567890", 2),
+        ("qwertyuiop", 16),
+        ("asdfghjkl", 30),
+        ("zxcvbnm", 44),
+    ];
     if let Some(code) = ROWS
         .iter()
         .find_map(|(row, first)| row.find(c).map(|i| first + i as u16))

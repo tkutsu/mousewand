@@ -1,0 +1,15 @@
+[package]
+name = "wisp-overlay"
+description = "The gesture trail for wisp: a layer-shell surface drawn with wgpu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+raw-window-handle = "0.6"
+smithay-client-toolkit = { version = "0.21", features = ["system"] }
+wgpu = "30"

@@ -6,7 +6,8 @@
 //!                        SCRIPT, e.g. "down; move -6 0 40; up"
 //!
 //! Script steps, separated by `;`: `down`, `up` (the middle button),
-//! `move DX DY N` (N motion events, 4 ms apart), `wait MS`.
+//! `move DX DY N` (N motion events, 4 ms apart), `wait MS`, and
+//! `run COMMAND` (a shell command, e.g. a screenshot mid-stroke).
 //! Point wisp at the fake mouse with `devices = ["wisp test mouse"]`.
 
 use std::thread::sleep;
@@ -38,7 +39,13 @@ fn capture(secs: u64) -> anyhow::Result<()> {
         match dev.fetch_events() {
             Ok(events) => {
                 for e in events.filter(|e| e.event_type() != EventType::SYNCHRONIZATION) {
-                    println!("{:>6}ms {:?} {} {}", start.elapsed().as_millis(), e.event_type(), e.code(), e.value());
+                    println!(
+                        "{:>6}ms {:?} {} {}",
+                        start.elapsed().as_millis(),
+                        e.event_type(),
+                        e.code(),
+                        e.value()
+                    );
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => sleep(Duration::from_millis(2)),
@@ -78,13 +85,18 @@ fn play(script: &str) -> anyhow::Result<()> {
     // Give wisp's hotplug watcher time to grab it.
     sleep(Duration::from_millis(1500));
 
-    let button = |dev: &mut VirtualDevice, value| dev.emit(&[InputEvent::new(EventType::KEY.0, KeyCode::BTN_MIDDLE.0, value)]);
+    let button =
+        |dev: &mut VirtualDevice, value| dev.emit(&[InputEvent::new(EventType::KEY.0, KeyCode::BTN_MIDDLE.0, value)]);
     for step in script.split(';').map(str::trim).filter(|s| !s.is_empty()) {
         let words: Vec<&str> = step.split_whitespace().collect();
         match words.as_slice() {
             ["down"] => button(&mut dev, 1)?,
             ["up"] => button(&mut dev, 0)?,
             ["wait", ms] => sleep(Duration::from_millis(ms.parse()?)),
+            ["run", ..] => {
+                let command = step.trim_start_matches("run").trim();
+                std::process::Command::new("sh").args(["-c", command]).status()?;
+            }
             ["move", dx, dy, n] => {
                 let (dx, dy, n): (i32, i32, u32) = (dx.parse()?, dy.parse()?, n.parse()?);
                 for _ in 0..n {

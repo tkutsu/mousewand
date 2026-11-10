@@ -170,7 +170,12 @@ impl<F: Fn(Output)> Router<F> {
 
     /// Releases what an unplugged mouse held, so no button stays down.
     fn gone(&mut self, id: DeviceId) -> std::io::Result<()> {
-        let codes: Vec<u16> = self.held.iter().filter(|&&(dev, _)| dev == id).map(|&(_, c)| c).collect();
+        let codes: Vec<u16> = self
+            .held
+            .iter()
+            .filter(|&&(dev, _)| dev == id)
+            .map(|&(_, c)| c)
+            .collect();
         for code in codes {
             if self.track(id, code, 0) {
                 self.key(code, 0)?;
