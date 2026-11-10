@@ -1,0 +1,13 @@
+[package]
+name = "wisp-input"
+description = "evdev grab, uinput forwarding, click replay and key injection for wisp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wisp-core.workspace = true
+anyhow.workspace = true
+log.workspace = true
+evdev = "0.13"
+notify = "8"
