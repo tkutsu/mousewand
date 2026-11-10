@@ -27,6 +27,23 @@ pub struct Target {
     config: Option<wgpu::SurfaceConfiguration>,
 }
 
+impl Target {
+    /// A theme's sRGB color as the shader should output it: sRGB surfaces
+    /// encode on write, so they take linear values.
+    pub fn color(&self, srgb: [f32; 3]) -> [f32; 3] {
+        if !self.config.as_ref().is_some_and(|c| c.format.is_srgb()) {
+            return srgb;
+        }
+        srgb.map(|c| {
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        })
+    }
+}
+
 impl Gpu {
     pub fn new() -> anyhow::Result<Gpu> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
@@ -79,8 +96,8 @@ impl Gpu {
         Ok(())
     }
 
-    /// Draws one frame. Returns false if the frame was skipped.
-    pub fn draw(&mut self, target: &Target, vertices: &[Vertex]) -> bool {
+    /// Draws one frame of triangle strips. Returns false if it was skipped.
+    pub fn draw(&mut self, target: &Target, strips: &[Vec<Vertex>]) -> bool {
         let Some(config) = &target.config else { return false };
         let frame = match target.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
@@ -109,15 +126,21 @@ impl Gpu {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            let vertices = strips.concat();
             if !vertices.is_empty() {
                 let buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("trail"),
-                    contents: bytemuck::cast_slice(vertices),
+                    contents: bytemuck::cast_slice(&vertices),
                     usage: wgpu::BufferUsages::VERTEX,
                 });
                 pass.set_pipeline(&pipeline);
                 pass.set_vertex_buffer(0, buffer.slice(..));
-                pass.draw(0..vertices.len() as u32, 0..1);
+                let mut start = 0;
+                for strip in strips {
+                    let end = start + strip.len() as u32;
+                    pass.draw(start..end, 0..1);
+                    start = end;
+                }
             }
         }
         self.queue.submit([encoder.finish()]);
@@ -142,7 +165,7 @@ impl Gpu {
                 buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<Vertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32, 2 => Float32, 3 => Float32x3],
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32, 2 => Float32, 3 => Float32x3, 4 => Float32],
                 })],
             },
             primitive: wgpu::PrimitiveState {

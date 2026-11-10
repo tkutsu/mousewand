@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use notify::{RecursiveMode, Watcher};
-use wisp_core::Config;
+use wisp_core::{Config, Theme};
 
 /// `$WISP_CONFIG_DIR`, else `$XDG_CONFIG_HOME/wisp`, else `~/.config/wisp`.
 pub fn dir() -> anyhow::Result<PathBuf> {
@@ -34,7 +34,19 @@ pub fn load(dir: &Path) -> anyhow::Result<Config> {
         }
     }
     apps.sort();
-    Config::parse(&main, &apps).map_err(anyhow::Error::msg)
+    let mut config = Config::parse(&main, &apps).map_err(anyhow::Error::msg)?;
+    config.theme = theme(dir, &config.settings.theme)?;
+    Ok(config)
+}
+
+/// `themes/<name>.toml`. "default" is built in, unless that file exists.
+fn theme(dir: &Path, name: &str) -> anyhow::Result<Theme> {
+    let path = dir.join("themes").join(format!("{name}.toml"));
+    let text = match std::fs::read_to_string(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && name == "default" => return Ok(Theme::default()),
+        other => other.with_context(|| format!("reading theme {}", path.display()))?,
+    };
+    Theme::parse(&text).map_err(|e| anyhow::anyhow!("themes/{name}.toml: {e}"))
 }
 
 fn read_optional(path: &Path) -> anyhow::Result<String> {
@@ -72,6 +84,7 @@ mod tests {
         let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
         let config = super::load(&examples).unwrap();
         assert_eq!(config.apps.len(), 2);
-        assert!(config.action("firefox", &"L".parse().unwrap()).is_some());
+        let l = wisp_core::Input::Stroke("L".parse().unwrap());
+        assert!(config.gestures_for("firefox").iter().any(|g| g.input == l));
     }
 }

@@ -24,3 +24,17 @@ action = { keys = "ctrl+t" }
 [[gesture]]
 stroke = "D"
 action = { keys = "F5" }
+
+# Trigger + wheel scrubs through tabs, overriding the global volume gestures.
+[[gesture]]
+wheel = "up"
+action = { keys = "ctrl+shift+Tab" }
+
+[[gesture]]
+wheel = "down"
+action = { keys = "ctrl+Tab" }
+
+# Rocker: hold the trigger and click right to reopen the last closed tab.
+[[gesture]]
+rocker = "right"
+action = { keys = "ctrl+shift+t" }

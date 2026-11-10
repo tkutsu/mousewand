@@ -1,12 +1,10 @@
 //! The ribbon's geometry: recent pointer positions turned into a triangle
 //! strip that narrows and fades toward its tail.
 
-/// How long a point stays on screen, in seconds.
-pub const LIFE: f32 = 0.45;
-/// Full width at the head, glow included, in logical pixels.
-pub const WIDTH: f32 = 26.0;
 /// Points closer than this to the previous one are skipped.
 const MIN_STEP: f32 = 1.5;
+/// How long a repeat-step ring takes to expand and fade, in seconds.
+pub const RING_LIFE: f32 = 0.3;
 
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -17,6 +15,20 @@ pub struct Vertex {
     pub edge: f32,
     pub alpha: f32,
     pub color: [f32; 3],
+    pub glow: f32,
+}
+
+/// How to paint one frame.
+#[derive(Clone, Copy, Debug)]
+pub struct Style {
+    pub color: [f32; 3],
+    pub glow: f32,
+    /// Scales every alpha, for the fade after release.
+    pub fade: f32,
+    /// Width at the head, glow included, in logical pixels.
+    pub width: f32,
+    /// How long a point stays on screen, in seconds.
+    pub life: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -41,10 +53,14 @@ impl Trail {
         self.points.push(Point { x, y, t });
     }
 
-    /// The strip for time `now` on a `width`×`height` surface, with every
-    /// alpha scaled by `fade`.
-    pub fn mesh(&mut self, now: f32, (width, height): (f32, f32), fade: f32, color: [f32; 3]) -> Vec<Vertex> {
-        self.points.retain(|p| now - p.t < LIFE);
+    /// The newest point.
+    pub fn head(&self) -> Option<(f32, f32)> {
+        self.points.last().map(|p| (p.x, p.y))
+    }
+
+    /// The strip for time `now` on a `width`×`height` surface.
+    pub fn mesh(&mut self, now: f32, (width, height): (f32, f32), style: &Style) -> Vec<Vertex> {
+        self.points.retain(|p| now - p.t < style.life);
         let points = &self.points;
         let n = points.len();
         if n < 2 {
@@ -61,15 +77,16 @@ impl Trail {
             let p = points[i];
             // 1 at the head, falling to 0 as the point expires: the ribbon
             // narrows and fades evenly in time, however fast it was drawn.
-            let life = 1.0 - (now - p.t) / LIFE;
-            let half = WIDTH / 2.0 * life.powf(0.7);
-            let alpha = life * fade;
+            let life = 1.0 - (now - p.t) / style.life;
+            let half = style.width / 2.0 * life.powf(0.7);
+            let alpha = life * style.fade;
             for side in [-1.0, 1.0] {
                 vertices.push(Vertex {
                     pos: clip(p.x + nx * half * side, p.y + ny * half * side),
                     edge: side,
                     alpha,
-                    color,
+                    color: style.color,
+                    glow: style.glow,
                 });
             }
         }
@@ -77,9 +94,43 @@ impl Trail {
     }
 }
 
+/// A ring `age` seconds into its pulse: it grows from the cursor and fades.
+pub fn ring((cx, cy): (f32, f32), age: f32, (width, height): (f32, f32), style: &Style) -> Vec<Vertex> {
+    const SEGMENTS: usize = 40;
+    let progress = (age / RING_LIFE).clamp(0.0, 1.0);
+    let radius = 8.0 + 28.0 * progress.sqrt();
+    let half = 7.0 * (1.0 - progress) + 2.0;
+    let alpha = (1.0 - progress) * style.fade;
+    let clip = |x: f32, y: f32| [x / width * 2.0 - 1.0, 1.0 - y / height * 2.0];
+    (0..=SEGMENTS)
+        .flat_map(|i| {
+            let angle = i as f32 / SEGMENTS as f32 * std::f32::consts::TAU;
+            let (sin, cos) = angle.sin_cos();
+            [-1.0, 1.0].map(|side| {
+                let r = radius + half * side;
+                Vertex {
+                    pos: clip(cx + cos * r, cy + sin * r),
+                    edge: side,
+                    alpha,
+                    color: style.color,
+                    glow: style.glow,
+                }
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const STYLE: Style = Style {
+        color: [1.0; 3],
+        glow: 0.6,
+        fade: 1.0,
+        width: 26.0,
+        life: 0.45,
+    };
 
     #[test]
     fn strip_narrows_toward_the_tail() {
@@ -87,11 +138,21 @@ mod tests {
         for i in 0..10 {
             trail.push(i as f32 * 10.0, 100.0, i as f32 * 0.01);
         }
-        let mesh = trail.mesh(0.1, (200.0, 200.0), 1.0, [1.0; 3]);
+        let mesh = trail.mesh(0.1, (200.0, 200.0), &STYLE);
         assert_eq!(mesh.len(), 20);
         let width = |i: usize| (mesh[i * 2].pos[1] - mesh[i * 2 + 1].pos[1]).abs();
         assert!(width(9) > width(5) && width(5) > width(1));
         assert!(mesh[19].alpha > mesh[0].alpha);
+    }
+
+    #[test]
+    fn ring_grows_and_fades() {
+        let early = ring((50.0, 50.0), 0.0, (100.0, 100.0), &STYLE);
+        let late = ring((50.0, 50.0), 0.25, (100.0, 100.0), &STYLE);
+        assert_eq!(early.len(), late.len());
+        // The outer vertex at angle 0 moves outward.
+        assert!(late[1].pos[0] > early[1].pos[0]);
+        assert!(late[0].alpha < early[0].alpha);
     }
 
     #[test]
@@ -102,7 +163,7 @@ mod tests {
         trail.push(50.0, 0.0, 0.3);
         trail.push(90.0, 0.0, 0.4);
         assert_eq!(trail.points.len(), 3);
-        assert_eq!(trail.mesh(0.5, (100.0, 100.0), 1.0, [1.0; 3]).len(), 4);
-        assert!(trail.mesh(1.0, (100.0, 100.0), 1.0, [1.0; 3]).is_empty());
+        assert_eq!(trail.mesh(0.5, (100.0, 100.0), &STYLE).len(), 4);
+        assert!(trail.mesh(1.0, (100.0, 100.0), &STYLE).is_empty());
     }
 }

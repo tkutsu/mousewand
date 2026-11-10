@@ -2,12 +2,13 @@
 //!
 //! The input thread feeds trigger presses, releases and motion in, with the
 //! current time, and acts on the outputs. Motion is always forwarded to the
-//! cursor; only the trigger button itself is held back until it's clear the
-//! press isn't a gesture.
+//! cursor; the trigger button itself is held back until it's clear the
+//! press isn't a gesture. While the trigger is down for a gesture, wheel
+//! notches and other buttons belong to wisp too: see [`Machine::claim`].
 
 use std::time::Duration;
 
-use crate::config::Settings;
+use crate::config::{Settings, Wheel};
 use crate::stroke::{Recognizer, Stroke};
 
 #[derive(Clone, PartialEq, Debug)]
@@ -24,6 +25,20 @@ pub enum Output {
     End(Stroke),
     /// The gesture was abandoned (e.g. its mouse was unplugged): fire nothing.
     Cancel,
+    /// Pointer motion during a gesture, for repeat steps.
+    Motion(f64, f64),
+    /// A wheel notch during a gesture.
+    Wheel(Wheel),
+    /// Another button pressed during a gesture.
+    Rocker(u16),
+}
+
+/// Input that can belong to a gesture instead of the app.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Extra {
+    Wheel(Wheel),
+    /// A button press other than the trigger.
+    Button(u16),
 }
 
 #[derive(Debug)]
@@ -109,26 +124,55 @@ impl Machine {
                 if moved.0.hypot(moved.1) <= self.threshold {
                     return Vec::new();
                 }
-                let rec = rec.clone();
-                let shown = rec.stroke();
-                let mut out = vec![Output::Begin];
-                if !shown.is_empty() {
-                    out.push(Output::Update(shown.clone()));
-                }
-                self.state = State::Gesturing { rec, shown };
-                out
+                self.begin()
             }
             State::Gesturing { rec, shown } => {
                 rec.push(dx, dy);
+                let mut out = vec![Output::Motion(dx, dy)];
                 let stroke = rec.stroke();
-                if stroke == *shown {
-                    return Vec::new();
+                if stroke != *shown {
+                    *shown = stroke.clone();
+                    out.push(Output::Update(stroke));
                 }
-                *shown = stroke.clone();
-                vec![Output::Update(stroke)]
+                out
             }
             State::Idle | State::Holding => Vec::new(),
         }
+    }
+
+    /// Whether wheel notches and other buttons belong to wisp right now.
+    pub fn claims(&self) -> bool {
+        matches!(self.state, State::Pending { .. } | State::Gesturing { .. })
+    }
+
+    /// Claims a wheel notch or button press for the gesture. `None` means
+    /// it isn't wisp's: forward it. A claimed press also turns a pending
+    /// press into a gesture, so the trigger click is never replayed.
+    pub fn claim(&mut self, extra: Extra) -> Option<Vec<Output>> {
+        let mut out = match self.state {
+            State::Pending { .. } => self.begin(),
+            State::Gesturing { .. } => Vec::new(),
+            State::Idle | State::Holding => return None,
+        };
+        out.push(match extra {
+            Extra::Wheel(wheel) => Output::Wheel(wheel),
+            Extra::Button(code) => Output::Rocker(code),
+        });
+        Some(out)
+    }
+
+    /// Pending → Gesturing.
+    fn begin(&mut self) -> Vec<Output> {
+        let State::Pending { rec, .. } = std::mem::replace(&mut self.state, State::Idle) else {
+            unreachable!("begin only runs on a pending press");
+        };
+        let shown = rec.stroke();
+        let mut out = vec![Output::Begin];
+        if !shown.is_empty() {
+            out.push(Output::Update(shown.clone()));
+        }
+        self.state = State::Gesturing { rec, shown };
+        out
     }
 
     pub fn tick(&mut self, now: Duration) -> Vec<Output> {
@@ -182,8 +226,12 @@ mod tests {
         assert_eq!(m.motion(-5.0, 0.0), []);
         assert_eq!(m.motion(-5.0, 0.0), [Begin]);
         assert_eq!(m.tick(ms(1000)), [], "a gesture never times out into a press");
-        let updates: Vec<_> = (0..10).flat_map(|_| m.motion(-5.0, 0.0)).collect();
+        let updates: Vec<_> = (0..10)
+            .flat_map(|_| m.motion(-5.0, 0.0))
+            .filter(|o| !matches!(o, Motion(..)))
+            .collect();
         assert_eq!(updates, [Update("L".parse().unwrap())]);
+        assert_eq!(m.motion(-1.0, 2.0), [Motion(-1.0, 2.0)]);
         assert_eq!(m.release(), [End("L".parse().unwrap())]);
     }
 
@@ -207,6 +255,29 @@ mod tests {
         m.motion(20.0, 0.0);
         assert_eq!(m.cancel(), [Cancel]);
         assert_eq!(m.release(), []);
+    }
+
+    #[test]
+    fn wheel_and_buttons_belong_to_the_gesture() {
+        let mut m = machine();
+        assert_eq!(m.claim(Extra::Wheel(crate::Wheel::Up)), None, "idle: scroll normally");
+
+        m.press(ms(0));
+        assert_eq!(
+            m.claim(Extra::Wheel(crate::Wheel::Up)),
+            Some(vec![Begin, Wheel(crate::Wheel::Up)]),
+            "a pending press becomes a gesture"
+        );
+        assert_eq!(m.claim(Extra::Button(0x110)), Some(vec![Rocker(0x110)]));
+        assert_eq!(m.release(), [End(Stroke::default())], "no click replay");
+
+        m.press(ms(0));
+        m.tick(ms(300));
+        assert_eq!(
+            m.claim(Extra::Wheel(crate::Wheel::Down)),
+            None,
+            "a plain hold scrolls normally"
+        );
     }
 
     #[test]

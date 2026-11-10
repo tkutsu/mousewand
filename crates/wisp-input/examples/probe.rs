@@ -6,8 +6,9 @@
 //!                        SCRIPT, e.g. "down; move -6 0 40; up"
 //!
 //! Script steps, separated by `;`: `down`, `up` (the middle button),
-//! `move DX DY N` (N motion events, 4 ms apart), `wait MS`, and
-//! `run COMMAND` (a shell command, e.g. a screenshot mid-stroke).
+//! `press BUTTON`, `release BUTTON` (left, right or middle), `wheel N`
+//! (N notches, negative is down), `move DX DY N` (N motion events, 4 ms
+//! apart), `wait MS`, and `run COMMAND` (e.g. a screenshot mid-stroke).
 //! Point wisp at the fake mouse with `devices = ["wisp test mouse"]`.
 
 use std::thread::sleep;
@@ -86,12 +87,25 @@ fn play(script: &str) -> anyhow::Result<()> {
     sleep(Duration::from_millis(1500));
 
     let button =
-        |dev: &mut VirtualDevice, value| dev.emit(&[InputEvent::new(EventType::KEY.0, KeyCode::BTN_MIDDLE.0, value)]);
+        |dev: &mut VirtualDevice, code: KeyCode, value| dev.emit(&[InputEvent::new(EventType::KEY.0, code.0, value)]);
+    let named = |name: &str| match name {
+        "left" => Ok(KeyCode::BTN_LEFT),
+        "right" => Ok(KeyCode::BTN_RIGHT),
+        "middle" => Ok(KeyCode::BTN_MIDDLE),
+        _ => Err(anyhow::anyhow!("unknown button {name:?}")),
+    };
     for step in script.split(';').map(str::trim).filter(|s| !s.is_empty()) {
         let words: Vec<&str> = step.split_whitespace().collect();
         match words.as_slice() {
-            ["down"] => button(&mut dev, 1)?,
-            ["up"] => button(&mut dev, 0)?,
+            ["down"] => button(&mut dev, KeyCode::BTN_MIDDLE, 1)?,
+            ["up"] => button(&mut dev, KeyCode::BTN_MIDDLE, 0)?,
+            ["press", name] => button(&mut dev, named(name)?, 1)?,
+            ["release", name] => button(&mut dev, named(name)?, 0)?,
+            ["wheel", n] => dev.emit(&[InputEvent::new(
+                EventType::RELATIVE.0,
+                RelativeAxisCode::REL_WHEEL.0,
+                n.parse()?,
+            )])?,
             ["wait", ms] => sleep(Duration::from_millis(ms.parse()?)),
             ["run", ..] => {
                 let command = step.trim_start_matches("run").trim();
