@@ -58,7 +58,10 @@ wisp grabs your mice through evdev and forwards everything through one virtual u
 | `wisp-core` | Config, stroke recognition, the trigger state machine. Pure and unit-tested. |
 | `wisp-input` | evdev grab, uinput forwarding, click replay, key injection. |
 | `wisp-backend` | Window under the cursor, focus and dispatch, per compositor. |
+| `wisp-overlay` | The trail: a layer-shell surface drawn with wgpu. |
 | `wisp` | The daemon. |
+
+The trail's surface exists only while you draw: plain clicks never create one, so it can't get in the way of fullscreen games or video. The GPU device starts once with the daemon so each gesture only pays for a surface. Its layer namespace is `wisp`; turn off Hyprland's layer animation for it with a `noanim` layer rule so the trail appears instantly.
 
 `cargo run -p wisp-input --example probe` tests the input path against a fake mouse without touching your desktop.
 

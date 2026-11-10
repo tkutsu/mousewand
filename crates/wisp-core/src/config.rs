@@ -70,7 +70,11 @@ impl FromStr for Trigger {
             "back" => 0x116,
             "task" => 0x117,
             "left" | "right" => return Err(format!("{s:?} can't be the trigger: it would stop normal clicks")),
-            _ => return Err(format!("unknown trigger {s:?}: use middle, side, extra, forward, back or task")),
+            _ => {
+                return Err(format!(
+                    "unknown trigger {s:?}: use middle, side, extra, forward, back or task"
+                ));
+            }
         }))
     }
 }
@@ -129,11 +133,22 @@ impl Config {
             .iter()
             .map(|(stem, text)| {
                 let file: AppFile = toml::from_str(text).map_err(|e| format!("apps/{stem}.toml: {e}"))?;
-                let classes = if file.classes.is_empty() { vec![stem.clone()] } else { file.classes };
-                Ok(App { classes, gestures: file.gestures })
+                let classes = if file.classes.is_empty() {
+                    vec![stem.clone()]
+                } else {
+                    file.classes
+                };
+                Ok(App {
+                    classes,
+                    gestures: file.gestures,
+                })
             })
             .collect::<Result<_, String>>()?;
-        Ok(Config { settings: main.settings, gestures: main.gestures, apps })
+        Ok(Config {
+            settings: main.settings,
+            gestures: main.gestures,
+            apps,
+        })
     }
 
     /// The action for a stroke over a window of `class`. App gestures win
@@ -192,7 +207,11 @@ mod tests {
     "#;
 
     fn config() -> Config {
-        Config::parse(MAIN, &[("firefox".into(), FIREFOX.into()), ("kitty".into(), String::new())]).unwrap()
+        Config::parse(
+            MAIN,
+            &[("firefox".into(), FIREFOX.into()), ("kitty".into(), String::new())],
+        )
+        .unwrap()
     }
 
     #[test]
@@ -207,9 +226,15 @@ mod tests {
     fn app_overrides_global() {
         let c = config();
         let l = "L".parse().unwrap();
-        assert_eq!(c.action("LibreWolf", &l), Some(&Action::Keys("alt+Left".parse().unwrap())));
+        assert_eq!(
+            c.action("LibreWolf", &l),
+            Some(&Action::Keys("alt+Left".parse().unwrap()))
+        );
         assert_eq!(c.action("kitty", &l), Some(&Action::Dispatch("workspace -1".into())));
-        assert_eq!(c.action("kitty", &"DR".parse().unwrap()), Some(&Action::Command("notify-send hi".into())));
+        assert_eq!(
+            c.action("kitty", &"DR".parse().unwrap()),
+            Some(&Action::Command("notify-send hi".into()))
+        );
         assert_eq!(c.action("kitty", &"U".parse().unwrap()), None);
     }
 
@@ -222,8 +247,14 @@ mod tests {
     fn errors_name_the_file() {
         let bad = Config::parse("trigger = \"left\"", &[]).unwrap_err();
         assert!(bad.contains("config.toml") && bad.contains("normal clicks"), "{bad}");
-        let bad = Config::parse("", &[("x".into(), "[[gesture]]\nstroke = \"L\"\naction = { keys = \"ctrl+wat\" }".into())])
-            .unwrap_err();
+        let bad = Config::parse(
+            "",
+            &[(
+                "x".into(),
+                "[[gesture]]\nstroke = \"L\"\naction = { keys = \"ctrl+wat\" }".into(),
+            )],
+        )
+        .unwrap_err();
         assert!(bad.contains("apps/x.toml") && bad.contains("wat"), "{bad}");
         assert!(Config::parse("thresold = 3", &[]).is_err());
     }

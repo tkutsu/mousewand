@@ -22,8 +22,8 @@ impl Hyprland {
     }
 
     fn request(&self, command: &str) -> anyhow::Result<String> {
-        let mut stream = UnixStream::connect(&self.socket)
-            .with_context(|| format!("connecting to {}", self.socket.display()))?;
+        let mut stream =
+            UnixStream::connect(&self.socket).with_context(|| format!("connecting to {}", self.socket.display()))?;
         stream.write_all(command.as_bytes())?;
         let mut reply = String::new();
         stream.read_to_string(&mut reply)?;
@@ -121,7 +121,11 @@ impl Client {
 impl HyprMonitor {
     fn logical(&self) -> Monitor {
         // Transforms 1, 3, 5 and 7 rotate by 90° or 270°.
-        let (w, h) = if self.transform % 2 == 1 { (self.height, self.width) } else { (self.width, self.height) };
+        let (w, h) = if self.transform % 2 == 1 {
+            (self.height, self.width)
+        } else {
+            (self.width, self.height)
+        };
         Monitor {
             name: self.name.clone(),
             x: self.x,
@@ -147,7 +151,12 @@ fn topmost<'a>(clients: &'a [Client], monitors: &[HyprMonitor], p: Point) -> Opt
         .filter(|c| c.mapped && !c.hidden && c.contains(p) && shown(c))
         .min_by_key(|c| {
             let special = c.workspace.name.starts_with("special:");
-            (!special, c.fullscreen == 0, !(c.floating || c.pinned), c.focus_history_id)
+            (
+                !special,
+                c.fullscreen == 0,
+                !(c.floating || c.pinned),
+                c.focus_history_id,
+            )
         })
 }
 
@@ -171,7 +180,10 @@ impl Backend for Hyprland {
     /// take the legacy `focuswindow` form.
     fn focus(&self, w: &Window) -> anyhow::Result<()> {
         self.dispatch_checked(&format!("hl.dsp.focus({{ window = \"address:{}\" }})", w.id))
-            .or_else(|lua| self.dispatch_checked(&format!("focuswindow address:{}", w.id)).map_err(|_| lua))
+            .or_else(|lua| {
+                self.dispatch_checked(&format!("focuswindow address:{}", w.id))
+                    .map_err(|_| lua)
+            })
     }
 
     fn monitors(&self) -> anyhow::Result<Vec<Monitor>> {
@@ -233,7 +245,10 @@ mod tests {
         assert_eq!(at(500.0, 500.0), None);
 
         let open = [monitor("1", "special:term")];
-        assert_eq!(topmost(&clients, &open, Point { x: 60.0, y: 60.0 }).map(|c| c.address.as_str()), Some("scratch"));
+        assert_eq!(
+            topmost(&clients, &open, Point { x: 60.0, y: 60.0 }).map(|c| c.address.as_str()),
+            Some("scratch")
+        );
     }
 
     #[test]

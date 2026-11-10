@@ -90,9 +90,7 @@ impl FromStr for Stroke {
         let dirs = s
             .chars()
             .map(|c| {
-                Dir::from_symbol(c).ok_or_else(|| {
-                    format!("bad stroke {s:?}: {c:?} is not one of U D L R 7 9 1 3")
-                })
+                Dir::from_symbol(c).ok_or_else(|| format!("bad stroke {s:?}: {c:?} is not one of U D L R 7 9 1 3"))
             })
             .collect::<Result<Vec<_>, _>>()?;
         if dirs.is_empty() {
@@ -144,7 +142,11 @@ fn alignment(a: Vec2, b: Vec2) -> f64 {
 
 impl Recognizer {
     pub fn new(min_segment: f64) -> Self {
-        Recognizer { min_segment, pending: (0.0, 0.0), runs: Vec::new() }
+        Recognizer {
+            min_segment,
+            pending: (0.0, 0.0),
+            runs: Vec::new(),
+        }
     }
 
     pub fn push(&mut self, dx: f64, dy: f64) {

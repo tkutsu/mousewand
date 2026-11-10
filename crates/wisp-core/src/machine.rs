@@ -30,10 +30,17 @@ pub enum Output {
 enum State {
     Idle,
     /// Pressed, and not yet a click, hold or gesture.
-    Pending { since: Duration, moved: (f64, f64), rec: Recognizer },
+    Pending {
+        since: Duration,
+        moved: (f64, f64),
+        rec: Recognizer,
+    },
     /// Held without moving: behaves as a normal button until release.
     Holding,
-    Gesturing { rec: Recognizer, shown: Stroke },
+    Gesturing {
+        rec: Recognizer,
+        shown: Stroke,
+    },
 }
 
 #[derive(Debug)]
@@ -65,7 +72,11 @@ impl Machine {
     pub fn press(&mut self, now: Duration) -> Vec<Output> {
         if let State::Idle = self.state {
             let rec = Recognizer::new(self.min_segment);
-            self.state = State::Pending { since: now, moved: (0.0, 0.0), rec };
+            self.state = State::Pending {
+                since: now,
+                moved: (0.0, 0.0),
+                rec,
+            };
         }
         Vec::new()
     }
