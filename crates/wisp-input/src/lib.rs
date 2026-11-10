@@ -5,7 +5,7 @@
 mod devices;
 
 use std::collections::HashSet;
-use std::sync::mpsc::{self, RecvTimeoutError, Sender};
+use std::sync::mpsc::{self, RecvTimeoutError, Sender, SyncSender};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -13,7 +13,7 @@ use anyhow::Context;
 use evdev::uinput::VirtualDevice;
 use evdev::{AttributeSet, BusType, EventType, InputEvent, InputId, KeyCode, RelativeAxisCode};
 use wisp_core::keys::Combo;
-use wisp_core::{Machine, Output, Settings};
+use wisp_core::{Extra, Machine, Output, Settings, Wheel};
 
 /// The virtual device's name, which is also how wisp avoids grabbing it.
 pub const VIRTUAL_NAME: &str = "wisp virtual mouse";
@@ -27,6 +27,10 @@ enum Msg {
     Gone(DeviceId),
     Settings(Settings),
     Type(Combo),
+    Hold(Combo),
+    Unhold(Combo),
+    /// Release everything wisp holds down, then confirm.
+    Shutdown(SyncSender<()>),
 }
 
 /// Talks to the running input thread.
@@ -36,9 +40,8 @@ pub struct Input {
 }
 
 impl Input {
-    /// Grabs the mice and starts the input thread. Gesture outputs (`Begin`,
-    /// `Update`, `End`, `Cancel`) go to `on_gesture`; clicks and holds are
-    /// handled here.
+    /// Grabs the mice and starts the input thread. Gesture outputs go to
+    /// `on_gesture`; clicks and holds are handled here.
     pub fn start(settings: Settings, on_gesture: impl Fn(Output) + Send + 'static) -> anyhow::Result<Input> {
         let device = virtual_device().context("creating the uinput device (is /dev/uinput writable?)")?;
         let (tx, rx) = mpsc::channel();
@@ -51,6 +54,8 @@ impl Input {
                 settings,
                 trigger_owner: None,
                 held: HashSet::new(),
+                claimed: HashSet::new(),
+                holding: Vec::new(),
                 on_gesture,
             };
             let start = Instant::now();
@@ -67,6 +72,15 @@ impl Input {
                         Ok(())
                     }
                     Ok(Msg::Type(combo)) => router.type_combo(&combo),
+                    Ok(Msg::Hold(combo)) => router.hold(&combo),
+                    Ok(Msg::Unhold(combo)) => router.unhold(&combo),
+                    Ok(Msg::Shutdown(done)) => {
+                        if let Err(e) = router.release_everything() {
+                            log::error!("releasing keys on shutdown: {e}");
+                        }
+                        let _ = done.send(());
+                        return;
+                    }
                     Err(RecvTimeoutError::Timeout) => {
                         let outputs = router.machine.tick(start.elapsed());
                         router.act(outputs)
@@ -91,6 +105,24 @@ impl Input {
     pub fn type_combo(&self, combo: Combo) {
         let _ = self.tx.send(Msg::Type(combo));
     }
+
+    /// Presses a combo's keys and keeps them down until `unhold`.
+    pub fn hold(&self, combo: Combo) {
+        let _ = self.tx.send(Msg::Hold(combo));
+    }
+
+    pub fn unhold(&self, combo: Combo) {
+        let _ = self.tx.send(Msg::Unhold(combo));
+    }
+
+    /// Releases every key and button wisp holds down and stops forwarding.
+    /// Waits up to a second for the input thread to confirm.
+    pub fn shutdown(&self) {
+        let (done, wait) = mpsc::sync_channel(1);
+        if self.tx.send(Msg::Shutdown(done)).is_ok() {
+            let _ = wait.recv_timeout(Duration::from_secs(1));
+        }
+    }
 }
 
 struct Router<F> {
@@ -103,6 +135,10 @@ struct Router<F> {
     /// the first holder and a release for the last, so two mice never send
     /// a double press or an early release.
     held: HashSet<(DeviceId, u16)>,
+    /// Buttons pressed during a gesture: wisp's, so their release is too.
+    claimed: HashSet<(DeviceId, u16)>,
+    /// Keys a hold gesture keeps down.
+    holding: Vec<u16>,
     on_gesture: F,
 }
 
@@ -113,11 +149,28 @@ impl<F: Fn(Output)> Router<F> {
         let mut outputs = Vec::new();
         let (mut dx, mut dy) = (0.0, 0.0);
         for event in events {
+            let (code, value) = (event.code(), event.value());
             match event.event_type() {
-                EventType::KEY if event.code() == trigger => outputs.extend(self.trigger(id, event.value(), now)),
+                EventType::KEY if code == trigger => outputs.extend(self.trigger(id, value, now)),
+                EventType::KEY if self.claimed.contains(&(id, code)) => {
+                    if value == 0 {
+                        self.claimed.remove(&(id, code));
+                    }
+                }
+                EventType::KEY if value == 1 && self.machine.claims() => {
+                    outputs.extend(self.machine.claim(Extra::Button(code)).unwrap_or_default());
+                    self.claimed.insert((id, code));
+                }
                 EventType::KEY => {
-                    if self.track(id, event.code(), event.value()) {
+                    if self.track(id, code, value) {
                         forward.push(event);
+                    }
+                }
+                EventType::RELATIVE if is_wheel(code) && self.machine.claims() => {
+                    if let Some(wheel) = notch(code, value) {
+                        for _ in 0..value.unsigned_abs() {
+                            outputs.extend(self.machine.claim(Extra::Wheel(wheel)).unwrap_or_default());
+                        }
                     }
                 }
                 EventType::RELATIVE if event.code() == RelativeAxisCode::REL_X.0 => {
@@ -181,12 +234,47 @@ impl<F: Fn(Output)> Router<F> {
                 self.key(code, 0)?;
             }
         }
+        self.claimed.retain(|&(dev, _)| dev != id);
         if self.trigger_owner == Some(id) {
             self.trigger_owner = None;
             let outputs = self.machine.cancel();
             self.act(outputs)?;
         }
         Ok(())
+    }
+
+    fn hold(&mut self, combo: &Combo) -> std::io::Result<()> {
+        for &code in &combo.codes {
+            self.holding.push(code);
+            self.key(code, 1)?;
+        }
+        Ok(())
+    }
+
+    fn unhold(&mut self, combo: &Combo) -> std::io::Result<()> {
+        let mut result = Ok(());
+        for &code in combo.codes.iter().rev() {
+            if let Some(i) = self.holding.iter().rposition(|&c| c == code) {
+                self.holding.remove(i);
+                result = result.and(self.key(code, 0));
+            }
+        }
+        result
+    }
+
+    /// Leaves nothing pressed: held keys, a held trigger, forwarded buttons.
+    fn release_everything(&mut self) -> std::io::Result<()> {
+        let mut result = Ok(());
+        for code in std::mem::take(&mut self.holding).into_iter().rev() {
+            result = result.and(self.key(code, 0));
+        }
+        let outputs = self.machine.cancel();
+        result = result.and(self.act(outputs));
+        let buttons: HashSet<u16> = self.held.drain().map(|(_, code)| code).collect();
+        for code in buttons {
+            result = result.and(self.key(code, 0));
+        }
+        result
     }
 
     fn act(&mut self, outputs: Vec<Output>) -> std::io::Result<()> {
@@ -211,6 +299,29 @@ impl<F: Fn(Output)> Router<F> {
             result = result.and(self.key(code, 0));
         }
         result
+    }
+}
+
+fn is_wheel(code: u16) -> bool {
+    [
+        RelativeAxisCode::REL_WHEEL,
+        RelativeAxisCode::REL_HWHEEL,
+        RelativeAxisCode::REL_WHEEL_HI_RES,
+        RelativeAxisCode::REL_HWHEEL_HI_RES,
+    ]
+    .iter()
+    .any(|axis| axis.0 == code)
+}
+
+/// The direction of a low-resolution wheel event. High-resolution events
+/// return `None`: they're swallowed with their notch but not counted twice.
+fn notch(code: u16, value: i32) -> Option<Wheel> {
+    match (code, value.signum()) {
+        (c, 1) if c == RelativeAxisCode::REL_WHEEL.0 => Some(Wheel::Up),
+        (c, -1) if c == RelativeAxisCode::REL_WHEEL.0 => Some(Wheel::Down),
+        (c, 1) if c == RelativeAxisCode::REL_HWHEEL.0 => Some(Wheel::Right),
+        (c, -1) if c == RelativeAxisCode::REL_HWHEEL.0 => Some(Wheel::Left),
+        _ => None,
     }
 }
 

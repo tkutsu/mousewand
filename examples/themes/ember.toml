@@ -1,0 +1,7 @@
+# A warm, wide trail that lingers. Use it with `theme = "ember"`.
+color = "#ff8a3d"
+rejected = "#7f8ca3"
+width = 34
+life_ms = 650
+fade_ms = 400
+glow = 0.9

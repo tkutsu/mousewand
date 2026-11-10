@@ -7,7 +7,7 @@ mod trail;
 
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use anyhow::Context;
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, FrameCallbackData, Region};
@@ -31,23 +31,23 @@ use smithay_client_toolkit::shell::wlr_layer::{
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 
 use gpu::{Gpu, Target};
-use trail::Trail;
+use trail::{Style, Trail};
+use wisp_core::Theme;
 
 /// The layer namespace, so users can write `layerrule = noanim, wisp`.
 pub const NAMESPACE: &str = "wisp";
-/// How long the trail fades after release.
-const END_FADE: Duration = Duration::from_millis(300);
-const COLOR: [f32; 3] = [0.45, 0.75, 1.0];
-const REJECTED: [f32; 3] = [1.0, 0.35, 0.35];
 
 enum Command {
     Begin { monitor: Option<String> },
+    Tick,
     End { matched: bool },
+    Theme(Theme),
 }
 
 /// Controls the overlay thread.
 pub struct Overlay {
     tx: channel::Sender<Command>,
+    thread: thread::JoinHandle<()>,
 }
 
 impl Overlay {
@@ -56,13 +56,15 @@ impl Overlay {
     pub fn start() -> anyhow::Result<Overlay> {
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let (tx, rx) = channel::channel();
-        thread::Builder::new().name("overlay".into()).spawn(move || {
+        let thread = thread::Builder::new().name("overlay".into()).spawn(move || {
             match State::new(rx) {
                 Ok((mut state, mut event_loop)) => {
                     let _ = ready_tx.send(Ok(()));
                     if let Err(e) = event_loop.run(None, &mut state, |_| {}) {
                         log::error!("overlay stopped: {e}");
                     }
+                    // Surfaces go before the GPU device, on this thread.
+                    state.active = None;
                 }
                 Err(e) => {
                     let _ = ready_tx.send(Err(e));
@@ -70,13 +72,30 @@ impl Overlay {
             };
         })?;
         ready_rx.recv().context("overlay thread died")??;
-        Ok(Overlay { tx })
+        Ok(Overlay { tx, thread })
+    }
+
+    /// Stops the overlay thread and frees the GPU before the process exits;
+    /// tearing down a live Vulkan device at exit can crash the driver.
+    pub fn shutdown(self) {
+        drop(self.tx);
+        let _ = self.thread.join();
     }
 
     /// Shows the trail on the named monitor, or wherever the compositor
     /// puts it if `None`.
     pub fn begin(&self, monitor: Option<String>) {
         let _ = self.tx.send(Command::Begin { monitor });
+    }
+
+    /// Applies from the next gesture.
+    pub fn set_theme(&self, theme: Theme) {
+        let _ = self.tx.send(Command::Theme(theme));
+    }
+
+    /// Pulses a ring at the cursor, for each repeat step.
+    pub fn tick(&self) {
+        let _ = self.tx.send(Command::Tick);
     }
 
     /// Lets clicks through and fades the trail out.
@@ -96,6 +115,7 @@ struct State {
     cursor_shapes: Option<CursorShapeManager>,
     pointer: Option<(wl_pointer::WlPointer, Option<WpCursorShapeDeviceV1>)>,
     gpu: Gpu,
+    theme: Theme,
     active: Option<Active>,
 }
 
@@ -108,6 +128,8 @@ struct Active {
     size: Option<(u32, u32)>,
     scale: i32,
     trail: Trail,
+    /// Ring pulses: when, in seconds since `start`, and where.
+    pulses: Vec<(f32, (f32, f32))>,
     start: Instant,
     ended: Option<(Instant, bool)>,
 }
@@ -121,12 +143,12 @@ impl State {
         WaylandSource::new(conn.clone(), queue)
             .insert(event_loop.handle())
             .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let stop = event_loop.get_signal();
         event_loop
             .handle()
-            .insert_source(rx, |event, _, state| {
-                if let channel::Event::Msg(command) = event {
-                    state.command(command);
-                }
+            .insert_source(rx, move |event, _, state| match event {
+                channel::Event::Msg(command) => state.command(command),
+                channel::Event::Closed => stop.stop(),
             })
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -139,6 +161,7 @@ impl State {
             cursor_shapes: CursorShapeManager::bind(&globals, &qh).ok(),
             pointer: None,
             gpu: Gpu::new()?,
+            theme: Theme::default(),
             active: None,
             conn,
             qh,
@@ -153,6 +176,13 @@ impl State {
                 self.active = None;
                 if let Err(e) = self.begin(monitor) {
                     log::error!("can't show the trail: {e:#}");
+                }
+            }
+            Command::Theme(theme) => self.theme = theme,
+            Command::Tick => {
+                let Some(active) = &mut self.active else { return };
+                if let Some(head) = active.trail.head() {
+                    active.pulses.push((active.start.elapsed().as_secs_f32(), head));
                 }
             }
             Command::End { matched } => {
@@ -189,6 +219,7 @@ impl State {
             size: None,
             scale: 1,
             trail: Trail::default(),
+            pulses: Vec::new(),
             start: Instant::now(),
             ended: None,
         });
@@ -212,8 +243,9 @@ impl State {
     fn draw(&mut self) {
         let Some(active) = &mut self.active else { return };
         let Some((w, h)) = active.size else { return };
+        let theme = &self.theme;
         let fade = match active.ended {
-            Some((at, _)) => 1.0 - at.elapsed().as_secs_f32() / END_FADE.as_secs_f32(),
+            Some((at, _)) => 1.0 - at.elapsed().as_secs_f32() * 1000.0 / theme.fade_ms.max(1) as f32,
             None => 1.0,
         };
         if fade <= 0.0 {
@@ -221,15 +253,30 @@ impl State {
             return;
         }
         let color = match active.ended {
-            Some((_, false)) => REJECTED,
-            _ => COLOR,
+            Some((_, false)) => theme.rejected,
+            _ => theme.color,
+        };
+        let style = Style {
+            color: active.target.color(color.0),
+            glow: theme.glow,
+            fade,
+            width: theme.width,
+            life: theme.life_ms as f32 / 1000.0,
         };
         let now = active.start.elapsed().as_secs_f32();
-        let mesh = active.trail.mesh(now, (w as f32, h as f32), fade, color);
+        let size = (w as f32, h as f32);
+        active.pulses.retain(|&(t, _)| now - t < trail::RING_LIFE);
+        let mut strips = vec![active.trail.mesh(now, size, &style)];
+        strips.extend(
+            active
+                .pulses
+                .iter()
+                .map(|&(t, center)| trail::ring(center, now - t, size, &style)),
+        );
         let surface = active.layer.wl_surface();
         // Ask for the next frame before presenting, which commits.
         surface.frame(&self.qh, FrameCallbackData(surface.clone()));
-        if !self.gpu.draw(&active.target, &mesh) {
+        if !self.gpu.draw(&active.target, &strips) {
             surface.commit();
         }
     }

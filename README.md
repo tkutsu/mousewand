@@ -9,6 +9,9 @@ Status: early. Works on Hyprland; other compositors come later.
 - **Click**: a quick press of the trigger is replayed as a normal click, so middle-click paste still works.
 - **Hold**: holding the trigger still for 300 ms makes it a normal press, so middle-drag and autoscroll still work.
 - **Gesture**: moving more than a few pixels while holding draws a stroke. Releasing fires the matching action, and the trigger click never reaches the app.
+- **Wheel and rocker**: while the trigger is down, wheel notches and other button presses belong to wisp. They fire their own gestures and never reach the app, and the trigger click isn't replayed.
+
+The trail turns red and fades when a stroke matches nothing.
 
 Strokes are sequences of directions: `U D L R` for up, down, left and right, and numpad digits for diagonals: `7` ↖, `9` ↗, `1` ↙, `3` ↘. `"DR"` is down then right; `"3"` is one down-right line.
 
@@ -30,6 +33,7 @@ The udev rule lets your user read mice and create the virtual device. Being in t
 ~/.config/wisp/
   config.toml        # settings and global gestures
   apps/<class>.toml  # gestures for one app, keyed by window class
+  themes/<name>.toml # trail looks, picked with theme = "<name>"
 ```
 
 ```toml
@@ -47,7 +51,34 @@ Actions:
 - `command`: a shell command. It gets `$WISP_CLASS` and `$WISP_TITLE`.
 - `dispatch`: a Hyprland dispatcher, passed as is. Lua-config Hyprland takes `'hl.dsp.focus({ workspace = "e+1" })'`; older versions take `"workspace e+1"`.
 
-App gestures override global ones with the same stroke. Saving a file reloads it; a broken file is logged and the last good config stays in use. See [`examples/`](examples) for a fuller setup. To find a window's class: `hyprctl clients`.
+Each gesture has exactly one input:
+
+- `stroke = "DR"`: a drawn stroke.
+- `wheel = "up"`: one wheel notch (`up`, `down`, `left`, `right`) while the trigger is held. Fires on every notch.
+- `rocker = "right"`: a `left` or `right` click while the trigger is held.
+
+Strokes can also keep firing while you hold the trigger, with `kind`:
+
+- `kind = "repeat"`: fires as soon as the stroke is recognized, then again every `step` pixels (80 by default) you keep moving in its last direction, and on every wheel notch. Good for scrubbing through tabs.
+- `kind = "hold"`, with `hold = "alt"`: like repeat, with those keys held down from the match until you release the trigger. `stroke = "9"`, `hold = "alt"`, `action = { keys = "Tab" }` is a real alt-tab switcher.
+
+A repeat or hold stroke fires the moment it's recognized, so no other stroke may start with it; wisp rejects such a config with an error. Held keys are released however the gesture ends: trigger release, the mouse unplugged, or wisp stopped.
+
+App gestures override global ones with the same input. Saving a file reloads it; a broken file is logged and the last good config stays in use. See [`examples/`](examples) for a fuller setup. To find a window's class: `hyprctl clients`.
+
+## Themes
+
+```toml
+# themes/ember.toml
+color = "#ff8a3d"     # the trail
+rejected = "#7f8ca3"  # the trail when nothing matched
+width = 34            # px at the head, glow included
+life_ms = 650         # how long the tail lingers
+fade_ms = 400         # fade after release
+glow = 0.9            # 0 is a plain line
+```
+
+Repeat and hold gestures pulse a ring at the cursor on every step.
 
 ## How it works
 
@@ -55,7 +86,7 @@ wisp grabs your mice through evdev and forwards everything through one virtual u
 
 | Crate | Does |
 |---|---|
-| `wisp-core` | Config, stroke recognition, the trigger state machine. Pure and unit-tested. |
+| `wisp-core` | Config, stroke recognition, the trigger state machine, and the per-gesture session that decides what fires. Pure and unit-tested. |
 | `wisp-input` | evdev grab, uinput forwarding, click replay, key injection. |
 | `wisp-backend` | Window under the cursor, focus and dispatch, per compositor. |
 | `wisp-overlay` | The trail: a layer-shell surface drawn with wgpu. |
