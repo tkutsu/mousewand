@@ -201,9 +201,11 @@ impl<F: Fn(Output)> Router<F> {
 
     /// Presses the combo, then releases every key even if a press failed.
     fn type_combo(&mut self, combo: &Combo) -> std::io::Result<()> {
-        let pressed = combo.codes.iter().try_for_each(|&code| self.key(code, 1));
-        let released = combo.codes.iter().rev().fold(Ok(()), |acc, &code| acc.and(self.key(code, 0)));
-        pressed.and(released)
+        let mut result = combo.codes.iter().try_for_each(|&code| self.key(code, 1));
+        for &code in combo.codes.iter().rev() {
+            result = result.and(self.key(code, 0));
+        }
+        result
     }
 }
 

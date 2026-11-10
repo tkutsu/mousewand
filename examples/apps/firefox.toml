@@ -1,0 +1,26 @@
+# Window classes this file applies to. Without `match`, the file name is the class.
+match = ["firefox", "librewolf", "zen"]
+
+[[gesture]]
+stroke = "L"
+action = { keys = "alt+Left" }
+
+[[gesture]]
+stroke = "R"
+action = { keys = "alt+Right" }
+
+[[gesture]]
+stroke = "DR"
+action = { keys = "ctrl+w" }
+
+[[gesture]]
+stroke = "UL"
+action = { keys = "ctrl+shift+t" }
+
+[[gesture]]
+stroke = "U"
+action = { keys = "ctrl+t" }
+
+[[gesture]]
+stroke = "D"
+action = { keys = "F5" }

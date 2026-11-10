@@ -1,0 +1,15 @@
+[[gesture]]
+stroke = "L"
+action = { keys = "ctrl+shift+Left" }   # previous tab
+
+[[gesture]]
+stroke = "R"
+action = { keys = "ctrl+shift+Right" }  # next tab
+
+[[gesture]]
+stroke = "U"
+action = { keys = "ctrl+shift+t" }      # new tab
+
+[[gesture]]
+stroke = "DR"
+action = { keys = "ctrl+shift+q" }      # close tab

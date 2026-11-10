@@ -1,0 +1,15 @@
+[package]
+name = "wisp"
+description = "Mouse gestures for Linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wisp-core.workspace = true
+wisp-input.workspace = true
+wisp-backend.workspace = true
+anyhow.workspace = true
+log.workspace = true
+env_logger = "0.11"
+notify = "8"

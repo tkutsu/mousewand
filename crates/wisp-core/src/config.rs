@@ -11,7 +11,7 @@ use serde::{Deserialize, Deserializer, de};
 use crate::keys::Combo;
 use crate::stroke::Stroke;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Config {
     pub settings: Settings,
     pub gestures: Vec<Gesture>,
@@ -149,12 +149,6 @@ impl Config {
 
 fn find<'a>(gestures: &'a [Gesture], stroke: &Stroke) -> Option<&'a Action> {
     gestures.iter().find(|g| &g.stroke == stroke).map(|g| &g.action)
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config { settings: Settings::default(), gestures: Vec::new(), apps: Vec::new() }
-    }
 }
 
 /// Deserializes a string field through `FromStr`.
