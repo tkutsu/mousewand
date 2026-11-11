@@ -105,7 +105,7 @@ Anything it can't do for you, like turning on focus-follows-mouse in labwc or CO
   themes/<name>.toml  trail looks, picked with theme = "<name>"
 ```
 
-An app's gestures replace the ones in `config.toml` with the same input. A broken file is reported in the log, and the last good config stays in use.
+An app's gestures replace the ones in `config.toml` with the same input. Saving a broken file shows a notification with the error, and the last good config stays in use.
 
 ### Settings
 
