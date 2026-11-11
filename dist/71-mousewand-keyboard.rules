@@ -1,0 +1,5 @@
+# Optional: lets the logged-in user's programs read keyboards, so mousewand
+# can tell which modifiers are held for gestures `with` them. mousewand only
+# asks which keys are down as a gesture fires, but any program you run could
+# read what you type, so install this only if you use those gestures.
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="uaccess"

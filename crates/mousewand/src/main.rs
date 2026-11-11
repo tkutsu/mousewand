@@ -13,15 +13,22 @@ use anyhow::Context;
 use mousewand_core::{Output, Trail, Trigger};
 use mousewand_input::Input;
 use mousewand_overlay::{Overlay, X11Overlay};
-use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM, SIGUSR1};
 
 use daemon::Daemon;
 
 enum Msg {
     Gesture(Output, Trigger),
     ConfigChanged,
+    /// Pause gestures, or resume them.
+    Toggle,
     Quit,
 }
+
+const USAGE: &str = "usage: mousewand [toggle]
+
+With no command, runs mousewand. `toggle` pauses the running one, so the
+trigger is an ordinary button, or resumes it. Bind it to a keyboard shortcut.";
 
 fn main() -> anyhow::Result<()> {
     // zbus logs every call at info; wgpu logs the GL drivers it probes and
@@ -30,6 +37,30 @@ fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(filter))
         .format_timestamp_millis()
         .init();
+
+    match std::env::args().nth(1).as_deref() {
+        None => run(),
+        Some("toggle") => toggle(),
+        Some("-h" | "--help" | "help") => {
+            println!("{USAGE}");
+            Ok(())
+        }
+        Some(other) => anyhow::bail!("unknown command {other:?}\n\n{USAGE}"),
+    }
+}
+
+/// Asks the running mousewand to pause or resume.
+fn toggle() -> anyhow::Result<()> {
+    let pid = instance::running()?.context("mousewand isn't running")?;
+    let pid = libc::pid_t::try_from(pid).context("bad pid in the lock file")?;
+    // SAFETY: kill only sends a signal; it touches no memory of ours.
+    if unsafe { libc::kill(pid, SIGUSR1) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("signalling mousewand");
+    }
+    Ok(())
+}
+
+fn run() -> anyhow::Result<()> {
 
     // Exits cleanly, so a second start from autostart or systemd's
     // Restart=on-failure doesn't count as a failure.
@@ -54,10 +85,14 @@ fn main() -> anyhow::Result<()> {
         let _ = changed.send(Msg::ConfigChanged);
     })?;
     // Quitting mid-gesture must not leave keys held down.
-    let mut signals = signal_hook::iterator::Signals::new([SIGTERM, SIGINT, SIGHUP])?;
+    let mut signals = signal_hook::iterator::Signals::new([SIGTERM, SIGINT, SIGHUP, SIGUSR1])?;
     thread::Builder::new().name("signals".into()).spawn(move || {
-        if signals.forever().next().is_some() {
-            let _ = tx.send(Msg::Quit);
+        for signal in signals.forever() {
+            let quit = signal != SIGUSR1;
+            let _ = tx.send(if quit { Msg::Quit } else { Msg::Toggle });
+            if quit {
+                break;
+            }
         }
     })?;
 
@@ -97,6 +132,7 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             },
+            Msg::Toggle => daemon.toggle(),
             Msg::Quit => {
                 log::info!("quitting");
                 daemon.quit();

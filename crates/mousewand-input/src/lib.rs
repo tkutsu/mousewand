@@ -3,6 +3,9 @@
 //! click, a hold or a gesture. The same virtual device types key combos.
 
 mod devices;
+mod keyboard;
+
+pub use keyboard::{Keyboards, readable as keyboards_readable};
 
 use std::collections::HashSet;
 use std::sync::mpsc::{self, RecvTimeoutError, Sender, SyncSender};
@@ -26,8 +29,13 @@ enum Msg {
     /// The mouse was unplugged or failed.
     Gone(DeviceId),
     Settings(Settings),
-    Type(Combo),
+    /// Types the combo, then confirms it went out.
+    Type(Combo, SyncSender<()>),
     Hold(Combo),
+    /// The pending press belongs to the app under the cursor.
+    Pass,
+    /// Paused, the triggers are ordinary buttons.
+    Paused(bool),
     Unhold(Combo),
     /// Release everything mousewand holds down, then confirm.
     Shutdown(SyncSender<()>),
@@ -55,6 +63,7 @@ impl Input {
                 active: settings.trigger,
                 settings,
                 trigger_owner: None,
+                paused: false,
                 held: HashSet::new(),
                 claimed: HashSet::new(),
                 holding: Vec::new(),
@@ -73,7 +82,19 @@ impl Input {
                         router.settings = settings;
                         Ok(())
                     }
-                    Ok(Msg::Type(combo)) => router.type_combo(&combo),
+                    Ok(Msg::Type(combo, done)) => {
+                        let result = router.type_combo(&combo);
+                        let _ = done.send(());
+                        result
+                    }
+                    Ok(Msg::Pass) => {
+                        let outputs = router.machine.pass();
+                        router.act(outputs)
+                    }
+                    Ok(Msg::Paused(paused)) => {
+                        router.paused = paused;
+                        Ok(())
+                    }
                     Ok(Msg::Hold(combo)) => router.hold(&combo),
                     Ok(Msg::Unhold(combo)) => router.unhold(&combo),
                     Ok(Msg::Shutdown(done)) => {
@@ -103,9 +124,24 @@ impl Input {
         let _ = self.tx.send(Msg::Settings(settings));
     }
 
-    /// Presses and releases a key combo on the virtual device.
+    /// Presses and releases a key combo on the virtual device, and returns
+    /// once it has, so the next step of a sequence comes after it.
     pub fn type_combo(&self, combo: Combo) {
-        let _ = self.tx.send(Msg::Type(combo));
+        let (done, wait) = mpsc::sync_channel(1);
+        if self.tx.send(Msg::Type(combo, done)).is_ok() {
+            let _ = wait.recv_timeout(Duration::from_secs(1));
+        }
+    }
+
+    /// Hands the trigger press in progress to the app, as an ordinary
+    /// button press.
+    pub fn pass(&self) {
+        let _ = self.tx.send(Msg::Pass);
+    }
+
+    /// Paused, every trigger press goes to the app as it is, from the next one.
+    pub fn set_paused(&self, paused: bool) {
+        let _ = self.tx.send(Msg::Paused(paused));
     }
 
     /// Presses a combo's keys and keeps them down until `unhold`.
@@ -135,6 +171,8 @@ struct Router<F> {
     active: Trigger,
     /// The mouse whose trigger press the machine is handling.
     trigger_owner: Option<DeviceId>,
+    /// Whether the triggers are ordinary buttons for now.
+    paused: bool,
     /// Buttons each mouse holds down. The virtual device sends a press for
     /// the first holder and a release for the last, so two mice never send
     /// a double press or an early release.
@@ -163,7 +201,7 @@ impl<F: Fn(Output, Trigger)> Router<F> {
                 }
                 EventType::KEY if self.is_trigger(code) => outputs.extend(self.trigger(id, code, value, now)),
                 EventType::KEY if value == 1 && self.machine.claims() => {
-                    outputs.extend(self.machine.claim(Extra::Button(code)).unwrap_or_default());
+                    outputs.extend(self.machine.claim(Extra::Button(code), now).unwrap_or_default());
                     self.claimed.insert((id, code));
                 }
                 EventType::KEY => {
@@ -174,7 +212,7 @@ impl<F: Fn(Output, Trigger)> Router<F> {
                 EventType::RELATIVE if is_wheel(code) && self.machine.claims() => {
                     if let Some(wheel) = notch(code, value) {
                         for _ in 0..value.unsigned_abs() {
-                            outputs.extend(self.machine.claim(Extra::Wheel(wheel)).unwrap_or_default());
+                            outputs.extend(self.machine.claim(Extra::Wheel(wheel), now).unwrap_or_default());
                         }
                     }
                 }
@@ -193,18 +231,21 @@ impl<F: Fn(Output, Trigger)> Router<F> {
             self.device.emit(&forward)?;
         }
         if dx != 0.0 || dy != 0.0 {
-            outputs.extend(self.machine.motion(dx, dy));
+            outputs.extend(self.machine.motion(dx, dy, now));
         }
         self.act(outputs)
     }
 
-    /// Either trigger while none is down; then only the one that is.
+    /// Either trigger while none is down, unless paused; then only the one
+    /// that is.
     fn is_trigger(&self, code: u16) -> bool {
         match self.trigger_owner {
             Some(_) => code == self.active.0,
+            None if self.paused => false,
             None => code == self.settings.trigger.0 || self.settings.global_trigger.is_some_and(|t| t.0 == code),
         }
     }
+
 
     /// Only the mouse that pressed the trigger can release it; a second
     /// mouse's trigger is ignored while the first is down.

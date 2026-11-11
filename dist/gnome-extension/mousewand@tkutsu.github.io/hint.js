@@ -46,7 +46,7 @@ export class Hint {
         const [arrow, text, label] = {
             drawing: [css(s.glyph), css(s.text, 0.75), hint.label],
             fired: [css(s.glyph), css(s.text), hint.label],
-            missed: [css([...rejected, 1]), css(s.text, 0.6), 'No gesture'],
+            missed: [css([...rejected, 1]), css(s.text, 0.6), hint.label ?? 'No gesture'],
         }[hint.state];
         const rows = [];
         if (hint.stroke || label)

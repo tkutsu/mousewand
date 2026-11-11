@@ -51,7 +51,7 @@ impl Painter {
             State::Missed => (
                 [rejected.0[0], rejected.0[1], rejected.0[2], 1.0],
                 dim(style.text, 0.6),
-                Some("No gesture"),
+                Some(hint.label.as_deref().unwrap_or("No gesture")),
             ),
         };
         let mut rows = Vec::new();
