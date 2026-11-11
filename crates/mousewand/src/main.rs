@@ -81,7 +81,14 @@ fn main() -> anyhow::Result<()> {
                     }
                     daemon.config = new;
                 }
-                Err(e) => log::error!("keeping the last good config: {e:#}"),
+                // A save that breaks the config would otherwise look like
+                // mousewand ignoring it.
+                Err(e) => {
+                    log::error!("keeping the last good config: {e:#}");
+                    if let Err(e) = notes::notify("mousewand: config not applied", &format!("{e:#}"), false) {
+                        log::warn!("can't show a notification: {e:#}");
+                    }
+                }
             },
             Msg::Quit => {
                 log::info!("quitting");
