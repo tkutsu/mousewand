@@ -3,7 +3,7 @@
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{Read, Seek, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Context;
 
@@ -15,8 +15,10 @@ pub struct Instance {
 
 /// The lock, or `None` (and a log line) when another mousewand holds it.
 pub fn claim() -> anyhow::Result<Option<Instance>> {
-    let dir = std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, PathBuf::from);
-    claim_at(&dir.join("mousewand.lock"))
+    // Per user and session; a shared fallback like /tmp would let one user's
+    // mousewand block another's.
+    let dir = std::env::var_os("XDG_RUNTIME_DIR").context("XDG_RUNTIME_DIR is not set")?;
+    claim_at(&Path::new(&dir).join("mousewand.lock"))
 }
 
 fn claim_at(path: &Path) -> anyhow::Result<Option<Instance>> {
