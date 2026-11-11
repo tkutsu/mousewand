@@ -2566,6 +2566,7 @@ name = "mousewand-settings"
 version = "0.1.0"
 dependencies = [
  "mousewand-core",
+ "mousewand-input",
  "serde",
  "tauri",
  "tauri-build",
