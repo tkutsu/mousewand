@@ -65,7 +65,8 @@ impl Shape {
         struct File {
             examples: Vec<Vec<[f64; 2]>>,
         }
-        let file: File = toml::from_str(text).map_err(|e| format!("shapes/{name}.toml: {e}"))?;
+        let file: File =
+            toml::from_str(text).map_err(|e| crate::config::toml_error(&format!("shapes/{name}.toml"), text, &e))?;
         let examples: Vec<Vec<Point>> = file
             .examples
             .into_iter()
@@ -97,6 +98,12 @@ impl Shape {
         })
     }
 
+    /// The first example as it's compared: points in drawing order,
+    /// centred, evened out and about 1 across. Enough to draw a thumbnail.
+    pub fn outline(&self) -> &[Point] {
+        self.examples.first().map_or(&[], |e| &e.0)
+    }
+
     /// How far `drawing` is from the closest example.
     fn distance(&self, drawing: &Cloud) -> f64 {
         self.examples
@@ -115,6 +122,13 @@ pub fn recognize<'a>(shapes: impl IntoIterator<Item = &'a Shape>, path: &[Point]
         .filter(|&(_, d)| d < THRESHOLD)
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(s, _)| s)
+}
+
+/// Whether `drawing` looks like one of `examples`, as a gesture would have
+/// to: a way to turn away a drawing that doesn't look like the others while
+/// teaching a shape.
+pub fn alike(examples: &[Vec<Point>], drawing: &[Point]) -> bool {
+    Shape::new("", examples).is_ok_and(|shape| recognize([&shape], drawing).is_some())
 }
 
 /// `N` points, evenly spaced along the drawing, centred and evened out.
@@ -325,6 +339,14 @@ mod tests {
         assert_eq!(recognize(&shapes, &drawn).map(|s| s.name.as_str()), Some("triangle"));
         let round = ellipse(100.0, 100.0, 0.0, 0.0, TAU, 0.0);
         assert_eq!(recognize(&shapes, &round).map(|s| s.name.as_str()), Some("circle"));
+
+        let round = |rx| ellipse(rx, 100.0, 0.0, 0.0, TAU, 0.0);
+        assert!(alike(&[round(100.0), round(120.0)], &round(80.0)));
+        assert!(!alike(
+            &[round(100.0)],
+            &polyline(&[(0.0, 0.0), (0.0, 200.0), (150.0, 200.0)])
+        ));
+        assert_eq!(shapes[0].outline().len(), N);
 
         assert!(Shape::parse("x", "examples = []").unwrap_err().contains("at least one"));
         assert!(

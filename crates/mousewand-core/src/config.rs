@@ -15,7 +15,7 @@ use crate::keys::Combo;
 use crate::shape::{self, Shape};
 use crate::stroke::Stroke;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub settings: Settings,
     /// Every app gets these, unless it has its own for the same input.
@@ -29,6 +29,8 @@ pub struct Config {
     pub theme: Theme,
     /// The built-in shapes and the taught ones.
     pub shapes: Vec<Shape>,
+    /// What opens the settings app: a stroke or shape, a circle by default.
+    pub open_settings: Input,
 }
 
 /// How the trail looks. Every field is optional.
@@ -64,10 +66,12 @@ impl Default for Theme {
 }
 
 impl Theme {
-    pub fn parse(text: &str) -> Result<Theme, String> {
-        let theme: Theme = toml::from_str(text).map_err(|e| e.to_string())?;
+    /// Parses `themes/<name>.toml`.
+    pub fn parse(name: &str, text: &str) -> Result<Theme, String> {
+        let file = format!("themes/{name}.toml");
+        let theme: Theme = toml::from_str(text).map_err(|e| toml_error(&file, text, &e))?;
         if theme.width <= 0.0 || theme.life_ms == 0 {
-            return Err("width and life_ms must be positive".into());
+            return Err(format!("{file}: width and life_ms must be more than 0"));
         }
         Ok(theme)
     }
@@ -394,6 +398,27 @@ struct MainFile {
     global: GlobalFile,
     #[serde(default)]
     hint: HintStyle,
+    open_settings: Option<RawOpen>,
+}
+
+/// `open_settings = { shape = "circle" }`, or a `stroke`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawOpen {
+    stroke: Option<String>,
+    shape: Option<String>,
+}
+
+impl RawOpen {
+    fn input(self, shapes: &[Shape]) -> Result<Input, String> {
+        let mut input = match (self.stroke, self.shape) {
+            (Some(stroke), None) => Input::Stroke(stroke.parse()?),
+            (None, Some(shape)) => Input::Shape(Shape::unresolved(&shape)),
+            _ => return Err("open_settings needs one stroke or one shape".into()),
+        };
+        resolve_input(&mut input, shapes)?;
+        Ok(input)
+    }
 }
 
 #[derive(Default, Deserialize)]
@@ -538,8 +563,12 @@ impl Config {
     /// class named by its stem.
     pub fn parse(main: &str, apps: &[(String, String)], shapes: &[(String, String)]) -> Result<Config, String> {
         let shapes = shapes_of(shapes)?;
-        let mut main: MainFile = toml::from_str(main).map_err(|e| format!("config.toml: {e}"))?;
+        let mut main: MainFile = toml::from_str(main).map_err(|e| toml_error("config.toml", main, &e))?;
         let in_main = |e: String| format!("config.toml: {e}");
+        let open_settings = match main.open_settings.take() {
+            Some(raw) => raw.input(&shapes).map_err(in_main)?,
+            None => Input::Shape(shapes.iter().find(|s| s.name == "circle").cloned().expect("built in")),
+        };
         main.hint.check().map_err(in_main)?;
         resolve(&mut main.gestures, &shapes).map_err(in_main)?;
         resolve(&mut main.global.gestures, &shapes).map_err(in_main)?;
@@ -564,7 +593,8 @@ impl Config {
         let apps = apps
             .iter()
             .map(|(stem, text)| {
-                let mut file: AppFile = toml::from_str(text).map_err(|e| format!("apps/{stem}.toml: {e}"))?;
+                let mut file: AppFile =
+                    toml::from_str(text).map_err(|e| toml_error(&format!("apps/{stem}.toml"), text, &e))?;
                 resolve(&mut file.gestures, &shapes).map_err(|e| format!("apps/{stem}.toml: {e}"))?;
                 let classes = if file.classes.is_empty() {
                     vec![stem.clone()]
@@ -593,13 +623,14 @@ impl Config {
             hint: main.hint,
             theme: Theme::default(),
             shapes,
+            open_settings,
         })
     }
 
     /// The gestures for the trigger over a window of `class`: the global
     /// ones unless they have their own trigger, its app's, the shared ones
-    /// the app doesn't override, then the settings gestures whose strokes
-    /// nothing else uses.
+    /// the app doesn't override, then the one that opens the settings app,
+    /// if nothing else uses its input and this isn't the settings app.
     pub fn gestures_for(&self, class: &str) -> Vec<Gesture> {
         let app = self
             .apps
@@ -610,14 +641,14 @@ impl Config {
             None => self.global.clone(),
         };
         gestures.extend(merged(app.map_or(&[], |a| &a.gestures), &self.gestures));
-        let settings = self
-            .shapes
-            .iter()
-            .find(|s| s.name == SETTINGS_SHAPE)
-            .map(settings_gesture);
-        if let Some(settings) = settings
-            && !gestures.iter().any(|g| g.input == settings.input)
-        {
+        let settings = Gesture {
+            input: self.open_settings.clone(),
+            kind: Kind::Oneshot,
+            action: Action::Command("mousewand-settings".into()),
+            name: Some("mousewand settings".into()),
+        };
+        let in_settings = SETTINGS_CLASSES.iter().any(|c| c.eq_ignore_ascii_case(class));
+        if !in_settings && !gestures.iter().any(|g| g.input == settings.input) {
             gestures.push(settings);
         }
         gestures
@@ -629,17 +660,65 @@ impl Config {
     }
 }
 
-/// The shape that opens the settings app on the window under the cursor.
-pub const SETTINGS_SHAPE: &str = "circle";
+/// The settings app's window classes: its binary's name, and its app id.
+pub const SETTINGS_CLASSES: [&str; 2] = ["mousewand-settings", "io.github.tkutsu.mousewand"];
 
-/// Opens `mousewand-settings`, which reads the window class from `MOUSEWAND_CLASS`.
-fn settings_gesture(shape: &Shape) -> Gesture {
-    Gesture {
-        input: Input::Shape(shape.clone()),
-        kind: Kind::Oneshot,
-        action: Action::Command("mousewand-settings".into()),
-        name: Some("mousewand settings".into()),
+/// A TOML error as one line, like "config.toml, line 4: there's no `colour`
+/// here", instead of the parser's excerpt with carets under it.
+pub fn toml_error(file: &str, text: &str, e: &toml::de::Error) -> String {
+    // Errors under `flatten` come with an empty span at the start: no line.
+    let at = match e.span() {
+        Some(span) if span.end > 0 => {
+            format!(
+                ", line {}",
+                text[..span.start.min(text.len())].matches('\n').count() + 1
+            )
+        }
+        _ => String::new(),
+    };
+    format!("{file}{at}: {}", plain(e.message()))
+}
+
+/// Serde's wording, in plainer words.
+fn plain(message: &str) -> String {
+    let quoted = |s: &str| s.split('`').nth(1).map(str::to_owned);
+    if let Some(rest) = message.strip_prefix("unknown field ") {
+        let (field, expected) = rest.split_once(", expected ").unwrap_or((rest, ""));
+        let field = quoted(field).unwrap_or_default();
+        let options: Vec<String> = expected
+            .replace("one of ", "")
+            .replace('`', "")
+            .split(", ")
+            .filter(|o| !o.is_empty())
+            .map(str::to_owned)
+            .collect();
+        let options = match options.split_last() {
+            Some((last, rest)) if !rest.is_empty() => format!("{} or {last}", rest.join(", ")),
+            _ => options.concat(),
+        };
+        return match options.is_empty() {
+            true => format!("there's no `{field}` here"),
+            false => format!("there's no `{field}` here; it can be {options}"),
+        };
     }
+    if let Some(field) = message.strip_prefix("missing field ").and_then(quoted) {
+        return format!("`{field}` is missing");
+    }
+    if let Some(rest) = message.strip_prefix("invalid type: ") {
+        let (found, expected) = rest.split_once(", expected ").unwrap_or((rest, "something else"));
+        let kind = |what: &str| match what.split_whitespace().next().unwrap_or(what) {
+            "f32" | "f64" | "u8" | "u16" | "u32" | "u64" | "i32" | "i64" | "integer" | "float" => "a number",
+            "a" if what.contains("string") => "text in quotes",
+            "string" => "text in quotes",
+            "boolean" | "bool" => "true or false",
+            "a" if what.contains("sequence") => "a list in [ ]",
+            "sequence" => "a list in [ ]",
+            "map" | "struct" => "a table",
+            _ => "something else",
+        };
+        return format!("this should be {}, not {}", kind(expected), kind(found));
+    }
+    message.trim().to_owned()
 }
 
 /// The built-in shapes no file replaces, then the taught ones.
@@ -659,15 +738,19 @@ fn shapes_of(files: &[(String, String)]) -> Result<Vec<Shape>, String> {
 
 /// Swaps each gesture's shape name for the shape.
 fn resolve(gestures: &mut [Gesture], shapes: &[Shape]) -> Result<(), String> {
-    for gesture in gestures {
-        if let Input::Shape(named) = &mut gesture.input {
-            *named = shapes.iter().find(|s| *s == named).cloned().ok_or_else(|| {
-                format!(
-                    "unknown shape {:?}: use circle, or draw it in the settings app to make shapes/{}.toml",
-                    named.name, named.name
-                )
-            })?;
-        }
+    gestures
+        .iter_mut()
+        .try_for_each(|g| resolve_input(&mut g.input, shapes))
+}
+
+fn resolve_input(input: &mut Input, shapes: &[Shape]) -> Result<(), String> {
+    if let Input::Shape(named) = input {
+        *named = shapes.iter().find(|s| *s == named).cloned().ok_or_else(|| {
+            format!(
+                "there's no shape called \"{}\": use circle, or draw it in the settings app",
+                named.name
+            )
+        })?;
     }
     Ok(())
 }
@@ -867,6 +950,50 @@ mod tests {
     }
 
     #[test]
+    fn errors_are_one_plain_line() {
+        let bad = Config::parse("trigger = \"back\"\ncolour = \"red\"", &[], &[]).unwrap_err();
+        assert_eq!(bad, "config.toml: there's no `colour` here");
+        let app = "match = [\"x\"]\n\n[[gesture]]\nstrok = \"L\"\naction = { keys = \"a\" }";
+        let bad = Config::parse("", &[("x".into(), app.into())], &[]).unwrap_err();
+        assert!(
+            bad.starts_with("apps/x.toml, line 4: there's no `strok` here; it can be stroke, shape"),
+            "{bad}"
+        );
+        assert!(bad.ends_with("action or name"), "{bad}");
+        assert!(!bad.contains('\n') && !bad.contains('^'), "{bad}");
+        let bad = Config::parse("[[gesture]]\nstroke = \"L\"", &[], &[]).unwrap_err();
+        assert!(bad.contains("`action` is missing"), "{bad}");
+        let bad = Config::parse("threshold = \"big\"", &[], &[]).unwrap_err();
+        assert_eq!(bad, "config.toml: this should be a number, not text in quotes");
+        let bad = Theme::parse("ember", "width = 0").unwrap_err();
+        assert_eq!(bad, "themes/ember.toml: width and life_ms must be more than 0");
+    }
+
+    #[test]
+    fn open_settings_is_a_circle_by_default_and_never_in_settings() {
+        let opens = |c: &Config, class: &str| {
+            c.gestures_for(class)
+                .iter()
+                .find(|g| g.action == Action::Command("mousewand-settings".into()))
+                .map(|g| g.input.clone())
+        };
+        let c = config();
+        assert!(matches!(opens(&c, "kitty"), Some(Input::Shape(s)) if s.name == "circle"));
+        assert_eq!(opens(&c, "mousewand-settings"), None);
+        assert_eq!(opens(&c, "io.github.tkutsu.mousewand"), None);
+
+        let c = Config::parse("open_settings = { stroke = \"U39D\" }", &[], &[]).unwrap();
+        assert_eq!(opens(&c, "kitty"), Some(stroke("U39D")));
+        let bad = Config::parse("open_settings = { shape = \"star\" }", &[], &[]).unwrap_err();
+        assert!(bad.contains("no shape called"), "{bad}");
+        assert!(
+            Config::parse("open_settings = {}", &[], &[])
+                .unwrap_err()
+                .contains("one stroke or one shape")
+        );
+    }
+
+    #[test]
     fn shapes_are_built_in_or_taught() {
         let gesture = |shape: &str| format!("[[gesture]]\nshape = \"{shape}\"\naction = {{ keys = \"a\" }}");
         let triangle = (
@@ -880,7 +1007,7 @@ mod tests {
 
         let bad = Config::parse(&gesture("star"), &[], &[]).unwrap_err();
         assert!(
-            bad.contains("config.toml") && bad.contains("unknown shape \"star\""),
+            bad.contains("config.toml") && bad.contains("no shape called \"star\""),
             "{bad}"
         );
         let bad = Config::parse("", &[("x".into(), gesture("star"))], &[triangle]).unwrap_err();
@@ -921,8 +1048,8 @@ mod tests {
         assert!(bad("stroke = \"L\"\nstep = 5").contains("only goes with"));
         assert!(bad("click = \"middle\"").contains("unknown click"));
         // The old names are gone.
-        assert!(bad("stroke = \"L\"\nkind = \"repeat\"").contains("unknown field"));
-        assert!(bad("rocker = \"left\"").contains("unknown field"));
+        assert!(bad("stroke = \"L\"\nkind = \"repeat\"").contains("there's no"));
+        assert!(bad("rocker = \"left\"").contains("there's no"));
 
         let action = |a: &str| Config::parse(&format!("[[gesture]]\nstroke = \"L\"\naction = {a}"), &[], &[]);
         assert!(
@@ -961,13 +1088,13 @@ mod tests {
 
     #[test]
     fn themes() {
-        let theme = Theme::parse("color = \"#ff8000\"\nwidth = 40").unwrap();
+        let theme = Theme::parse("x", "color = \"#ff8000\"\nwidth = 40").unwrap();
         assert_eq!(theme.color, Color([1.0, 128.0 / 255.0, 0.0]));
         assert_eq!(theme.width, 40.0);
         assert_eq!(theme.life_ms, Theme::default().life_ms);
-        assert!(Theme::parse("color = \"orange\"").unwrap_err().contains("#rrggbb"));
-        assert!(Theme::parse("width = 0").is_err());
-        assert!(Theme::parse("colour = \"#ffffff\"").is_err());
+        assert!(Theme::parse("x", "color = \"orange\"").unwrap_err().contains("#rrggbb"));
+        assert!(Theme::parse("x", "width = 0").is_err());
+        assert!(Theme::parse("x", "colour = \"#ffffff\"").is_err());
     }
 
     #[test]

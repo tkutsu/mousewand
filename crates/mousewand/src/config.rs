@@ -56,7 +56,7 @@ fn theme(dir: &Path, name: &str) -> anyhow::Result<Theme> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound && name == "default" => return Ok(Theme::default()),
         other => other.with_context(|| format!("reading theme {}", path.display()))?,
     };
-    Theme::parse(&text).map_err(|e| anyhow::anyhow!("themes/{name}.toml: {e}"))
+    Theme::parse(name, &text).map_err(anyhow::Error::msg)
 }
 
 fn read_optional(path: &Path) -> anyhow::Result<String> {
