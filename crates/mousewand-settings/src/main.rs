@@ -37,6 +37,12 @@ fn save(
     context.dir.save(&settings, &global, app.as_ref())
 }
 
+/// Saves a shape drawn in the window; returns the name it was saved under.
+#[tauri::command]
+fn save_shape(context: tauri::State<Context>, name: String, examples: Vec<Vec<[f64; 2]>>) -> Result<String, String> {
+    context.dir.save_shape(&name, &examples)
+}
+
 /// What the daemon's setup said on this compositor, in
 /// `$XDG_STATE_HOME/mousewand/notes`, one per line.
 #[tauri::command]
@@ -78,7 +84,7 @@ fn main() {
             class,
             open_notes: args.iter().any(|a| a == "--notes"),
         })
-        .invoke_handler(tauri::generate_handler![load, save, notes])
+        .invoke_handler(tauri::generate_handler![load, save, save_shape, notes])
         .run(tauri::generate_context!())
         .expect("mousewand-settings failed to start");
 }

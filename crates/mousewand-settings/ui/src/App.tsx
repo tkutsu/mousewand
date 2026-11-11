@@ -11,6 +11,7 @@ export default function App() {
   const [global, setGlobal] = useState<api.Gesture[]>([]);
   const [app, setApp] = useState<api.App | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
+  const [shapes, setShapes] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>("global");
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
@@ -22,6 +23,7 @@ export default function App() {
         setSettings(s.settings);
         setGlobal(s.global);
         setApp(s.app);
+        setShapes(s.shapes);
         setNotes(n.notes);
         if (n.open && n.notes.length > 0) setTab("setup");
         else if (s.app) setTab("app");
@@ -46,6 +48,11 @@ export default function App() {
     } catch (e) {
       setStatus({ ok: false, text: String(e) });
     }
+  };
+
+  const shapeProps = {
+    shapes,
+    onNewShape: (name: string) => setShapes((list) => (list.includes(name) ? list : [...list, name])),
   };
 
   if (!state || !settings) {
@@ -85,11 +92,11 @@ export default function App() {
               <SettingsForm settings={settings} themes={state.themes} onChange={edit(setSettings)} />
             </Section>
             <Section title="Gestures for every app" hint="An app's own gestures override these.">
-              <GestureList gestures={global} onChange={edit(setGlobal)} />
+              <GestureList gestures={global} onChange={edit(setGlobal)} {...shapeProps} />
             </Section>
           </div>
         ) : (
-          app && <AppTab app={app} presets={state.presets} onChange={edit(setApp)} />
+          app && <AppTab app={app} presets={state.presets} onChange={edit(setApp)} shapeProps={shapeProps} />
         )}
       </main>
 
@@ -135,10 +142,12 @@ function AppTab({
   app,
   presets,
   onChange,
+  shapeProps,
 }: {
   app: api.App;
   presets: api.Preset[];
   onChange: (app: api.App) => void;
+  shapeProps: { shapes: string[]; onNewShape: (name: string) => void };
 }) {
   const matching = presets.filter((p) => p.classes.some((c) => app.classes.some((a) => a.toLowerCase() === c.toLowerCase())));
   const others = presets.filter((p) => !matching.includes(p));
@@ -199,7 +208,7 @@ function AppTab({
         </div>
       </Section>
       <Section title={`Gestures for ${app.classes[0] ?? app.file}`}>
-        <GestureList gestures={app.gestures} onChange={(gestures) => onChange({ ...app, gestures })} />
+        <GestureList gestures={app.gestures} onChange={(gestures) => onChange({ ...app, gestures })} {...shapeProps} />
       </Section>
     </div>
   );

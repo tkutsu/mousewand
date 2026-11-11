@@ -101,6 +101,7 @@ mod tests {
             action = { keys = "ctrl+Tab" }
             "#,
             &[],
+            &[],
         )
         .unwrap()
         .gestures

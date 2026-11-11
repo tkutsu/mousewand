@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+use mousewand_core::shape::Shape;
 use mousewand_core::{Config, Theme};
 use serde::{Deserialize, Serialize};
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, value};
@@ -15,9 +16,9 @@ use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, val
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Gesture {
-    /// "stroke", "wheel" or "click".
+    /// "stroke", "shape", "wheel" or "click".
     pub input: String,
-    /// The stroke, wheel direction or clicked button.
+    /// The stroke, shape name, wheel direction or clicked button.
     pub value: String,
     /// "oneshot", "repeat" or "hold": `repeat = true`, or `hold` in the action.
     pub kind: String,
@@ -69,6 +70,8 @@ pub struct State {
     /// The app for the window the settings gesture was drawn over, if any.
     pub app: Option<App>,
     pub themes: Vec<String>,
+    /// The built-in shapes, then the drawn ones.
+    pub shapes: Vec<String>,
     pub presets: Vec<Preset>,
 }
 
@@ -83,10 +86,14 @@ impl Dir {
         self.0.join("apps").join(format!("{file}.toml"))
     }
 
+    fn shape_path(&self, name: &str) -> PathBuf {
+        self.0.join("shapes").join(format!("{name}.toml"))
+    }
+
     pub fn load(&self, class: Option<&str>) -> Result<State, String> {
         let main = read(&self.main_path())?;
         let table: toml::Table = toml::from_str(&main).map_err(|e| format!("config.toml: {e}"))?;
-        let config = Config::parse(&main, &[]).map_err(|e| e.to_string())?;
+        let config = Config::parse(&main, &[], &toml_files(&self.0.join("shapes"))?)?;
         let s = &config.settings;
         let settings = Settings {
             // By its usual name, so "side" shows as "back".
@@ -106,6 +113,7 @@ impl Dir {
             global: gestures_of(&table)?,
             app,
             themes: self.themes(),
+            shapes: config.shapes.iter().map(|s| s.name.clone()).collect(),
             presets: presets()?,
         })
     }
@@ -134,18 +142,33 @@ impl Dir {
     }
 
     fn app_files(&self) -> Result<Vec<(String, String)>, String> {
-        let Ok(entries) = std::fs::read_dir(self.0.join("apps")) else {
-            return Ok(Vec::new());
-        };
-        let mut files = Vec::new();
-        for path in entries.filter_map(|e| Some(e.ok()?.path())) {
-            if path.extension().is_some_and(|ext| ext == "toml") {
-                let stem = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
-                files.push((stem, read(&path)?));
-            }
+        toml_files(&self.0.join("apps"))
+    }
+
+    /// Saves a drawn shape as `shapes/<name>.toml`, its points rounded to
+    /// whole pixels, and returns the name it got.
+    pub fn save_shape(&self, name: &str, examples: &[Vec<[f64; 2]>]) -> Result<String, String> {
+        let name = file_name(name.trim());
+        if name.is_empty() {
+            return Err("the shape needs a name".into());
         }
-        files.sort();
-        Ok(files)
+        let examples: Vec<String> = examples
+            .iter()
+            .map(|e| {
+                let points: Vec<String> = e
+                    .iter()
+                    .map(|[x, y]| format!("[{}, {}]", x.round(), y.round()))
+                    .collect();
+                format!("  [{}],\n", points.join(", "))
+            })
+            .collect();
+        let text = format!(
+            "# Drawn in mousewand-settings. Use it with shape = \"{name}\".\nexamples = [\n{}]\n",
+            examples.concat()
+        );
+        Shape::parse(&name, &text)?;
+        write(&self.shape_path(&name), &text)?;
+        Ok(name)
     }
 
     fn themes(&self) -> Vec<String> {
@@ -177,7 +200,7 @@ impl Dir {
             }
             None => None,
         };
-        let config = Config::parse(&main, &apps)?;
+        let config = Config::parse(&main, &apps, &toml_files(&self.0.join("shapes"))?)?;
         if config.settings.theme != "default" {
             let name = &config.settings.theme;
             let path = self.0.join("themes").join(format!("{name}.toml"));
@@ -190,6 +213,23 @@ impl Dir {
         }
         Ok(())
     }
+}
+
+/// Each `*.toml` in `dir` as `(file stem, text)`, sorted. No directory is
+/// no files.
+fn toml_files(dir: &Path) -> Result<Vec<(String, String)>, String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(Vec::new());
+    };
+    let mut files = Vec::new();
+    for path in entries.filter_map(|e| Some(e.ok()?.path())) {
+        if path.extension().is_some_and(|ext| ext == "toml") {
+            let stem = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+            files.push((stem, read(&path)?));
+        }
+    }
+    files.sort();
+    Ok(files)
 }
 
 /// A missing file reads as empty.
@@ -241,10 +281,10 @@ fn gestures_of(table: &toml::Table) -> Result<Vec<Gesture>, String> {
 
 fn gesture_of(table: &toml::Table) -> Result<Gesture, String> {
     let text = |key: &str| table.get(key).and_then(|v| v.as_str()).map(String::from);
-    let (input, value) = ["stroke", "wheel", "click"]
+    let (input, value) = ["stroke", "shape", "wheel", "click"]
         .into_iter()
         .find_map(|key| Some((key.to_string(), text(key)?)))
-        .ok_or("a gesture needs a stroke, wheel or click")?;
+        .ok_or("a gesture needs a stroke, shape, wheel or click")?;
     let action = table
         .get("action")
         .and_then(|a| a.as_table())
@@ -396,7 +436,7 @@ mod tests {
                 gestures: preset.gestures.clone(),
             };
             let text = edit_app("", &app).unwrap();
-            Config::parse("", &[("x".into(), text)]).unwrap_or_else(|e| panic!("{}: {e}", preset.name));
+            Config::parse("", &[("x".into(), text)], &[]).unwrap_or_else(|e| panic!("{}: {e}", preset.name));
         }
     }
 
@@ -457,6 +497,29 @@ mod tests {
             (gestures[2].kind.as_str(), gestures[2].hold.as_deref()),
             ("hold", Some("alt"))
         );
+    }
+
+    #[test]
+    fn drawn_shapes_save_and_list() {
+        let (dir, path) = dir("shapes");
+        let triangle = vec![[0.0, 0.0], [100.4, 0.0], [50.0, 90.0], [0.0, 0.0]];
+        let name = dir.save_shape("my triangle", &[triangle.clone(), triangle]).unwrap();
+        assert_eq!(name, "my_triangle");
+        let text = std::fs::read_to_string(path.join("shapes/my_triangle.toml")).unwrap();
+        assert!(text.contains("[100, 0]"), "{text}");
+        assert_eq!(dir.load(None).unwrap().shapes, ["circle", "my_triangle"]);
+
+        let gesture = Gesture {
+            input: "shape".into(),
+            ..keys("my_triangle", "ctrl+t")
+        };
+        dir.save(&dir.load(None).unwrap().settings, std::slice::from_ref(&gesture), None)
+            .unwrap();
+        assert_eq!(dir.load(None).unwrap().global, [gesture]);
+
+        assert!(dir.save_shape("dot", &[vec![[5.0, 5.0], [5.0, 5.0]]]).is_err());
+        assert!(dir.save_shape(" ", &[vec![[0.0, 0.0], [9.0, 9.0]]]).is_err());
+        assert!(!path.join("shapes/dot.toml").exists());
     }
 
     #[test]

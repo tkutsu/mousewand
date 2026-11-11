@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type Gesture = {
-  input: "stroke" | "wheel" | "click";
+  input: "stroke" | "shape" | "wheel" | "click";
   value: string;
   kind: "oneshot" | "repeat" | "hold";
   step: number | null;
@@ -38,6 +38,8 @@ export type State = {
   global: Gesture[];
   app: App | null;
   themes: string[];
+  /** The built-in shapes, then the drawn ones. */
+  shapes: string[];
   presets: Preset[];
 };
 
@@ -47,6 +49,10 @@ export const load = () => invoke<State>("load");
 export type Notes = { notes: string[]; open: boolean };
 
 export const notes = () => invoke<Notes>("notes");
+
+/** Saves a drawn shape, each example a list of [x, y]; resolves to its file name. */
+export const saveShape = (name: string, examples: [number, number][][]) =>
+  invoke<string>("save_shape", { name, examples });
 
 export const save = (settings: Settings, global: Gesture[], app: App | null) =>
   invoke<void>("save", { settings, global, app });
