@@ -2,7 +2,7 @@
 // so this is the only place that can draw above every window.
 //
 // It follows wisp's own trail: a ribbon that narrows and fades with each
-// point's age, a soft glow around a bright core, rings on repeat steps,
+// point's age, a soft glow around a solid body, rings on repeat steps,
 // and a fade on release, red when nothing matched. The canvas covers only
 // the stroke, since Cairo redraws it on the CPU every frame.
 
@@ -135,17 +135,18 @@ export class Trail {
             cr.setOperator(Cairo.Operator.OVER);
             cr.paint();
         };
-        const white = c => c + (1 - c) * 0.8;
+        const light = c => c + (1 - c) * 0.3;
         // Nested strokes, wide and faint to narrow and strong, stand in for
-        // the shader's glow falloff.
-        for (const [scale, alpha] of [[1.0, 0.12], [0.7, 0.2], [0.45, 0.35]])
+        // the shader's glow falloff, then the body and its lighter middle.
+        for (const [scale, alpha] of [[1.0, 0.08], [0.7, 0.14], [0.45, 0.25]])
             pass(scale, [r, g, b], theme.glow * alpha);
-        pass(0.28, [white(r), white(g), white(b)], 1);
+        pass(0.32, [r, g, b], 1);
+        pass(0.12, [light(r), light(g), light(b)], 1);
 
         for (const pulse of this._pulses) {
             const progress = Math.min((t - pulse.t) / RING_LIFE_MS, 1);
             cr.setLineWidth(2 * (7 * (1 - progress) + 2) * 0.5);
-            cr.setSourceRGBA(white(r), white(g), white(b), (1 - progress) * this._fade);
+            cr.setSourceRGBA(r, g, b, (1 - progress) * this._fade);
             cr.arc(pulse.x - ox, pulse.y - oy, 8 + 28 * Math.sqrt(progress), 0, 2 * Math.PI);
             cr.stroke();
         }

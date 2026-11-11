@@ -2,7 +2,11 @@
 //! strip that narrows and fades toward its tail.
 
 /// Points closer than this to the previous one are skipped.
-const MIN_STEP: f32 = 1.5;
+const MIN_STEP: f32 = 3.0;
+/// How many points on each side of a point are averaged into it. Mice
+/// report whole counts, so raw points zigzag a pixel or two around the
+/// line the hand drew.
+const SMOOTHING: usize = 4;
 /// How long a repeat-step ring takes to expand and fade, in seconds.
 pub const RING_LIFE: f32 = 0.3;
 
@@ -61,7 +65,7 @@ impl Trail {
     /// The strip for time `now` on a `width`×`height` surface.
     pub fn mesh(&mut self, now: f32, (width, height): (f32, f32), style: &Style) -> Vec<Vertex> {
         self.points.retain(|p| now - p.t < style.life);
-        let points = &self.points;
+        let points = self.smoothed();
         let n = points.len();
         if n < 2 {
             return Vec::new();
@@ -92,6 +96,29 @@ impl Trail {
         }
         vertices
     }
+
+    /// The points, each averaged with its neighbours, weighted by nearness.
+    /// The window shrinks toward the ends, so the head stays on the cursor.
+    fn smoothed(&self) -> Vec<Point> {
+        let n = self.points.len();
+        (0..n)
+            .map(|i| {
+                let k = SMOOTHING.min(i).min(n - 1 - i);
+                let (mut x, mut y, mut total) = (0.0, 0.0, 0.0);
+                for j in i - k..=i + k {
+                    let weight = (k + 1 - i.abs_diff(j)) as f32;
+                    x += self.points[j].x * weight;
+                    y += self.points[j].y * weight;
+                    total += weight;
+                }
+                Point {
+                    x: x / total,
+                    y: y / total,
+                    t: self.points[i].t,
+                }
+            })
+            .collect()
+    }
 }
 
 impl Trail {
@@ -104,7 +131,8 @@ impl Trail {
         if n < 2 {
             return Vec::new();
         }
-        let (head, prev) = (self.points[n - 1], self.points[n - 2]);
+        let points = self.smoothed();
+        let (head, prev) = (points[n - 1], points[n - 2]);
         let forward = (head.y - prev.y).atan2(head.x - prev.x);
         let life = 1.0 - (now - head.t) / style.life;
         let radius = style.width / 2.0 * life.powf(0.7);
