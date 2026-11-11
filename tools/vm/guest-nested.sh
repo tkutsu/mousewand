@@ -14,7 +14,6 @@ case "$1" in
     cmd=niri
     ;;
   cosmic) cmd=cosmic-comp ;;
-  wayfire) cmd="wayfire -c $HOME/wayfire.ini" ;;
   *) cmd=$1 ;;
 esac
 SWAYSOCK=$S swaymsg -q "exec $cmd > ~/nested-$1.log 2>&1"

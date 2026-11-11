@@ -13,9 +13,7 @@ while true; do
     gnome) gnome-shell --wayland --display-server > ~/session-gnome.log 2>&1 ;;
     niri) niri > ~/session-niri.log 2>&1 ;;
     cosmic) cosmic-comp > ~/session-cosmic.log 2>&1 ;;
-    wayfire) wayfire -c ~/wayfire.ini > ~/session-wayfire.log 2>&1 ;;
     labwc) labwc > ~/session-labwc.log 2>&1 ;;
-    river) river > ~/session-river.log 2>&1 ;;
     x11)
       printf '#!/bin/sh\nexec xfwm4 --compositor=off\n' > ~/.xinitrc-wisp
       startx ~/.xinitrc-wisp -- :0 vt1 -keeptty > ~/session-x11.log 2>&1

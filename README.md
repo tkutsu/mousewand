@@ -2,22 +2,21 @@
 
 Mouse gestures for Linux. Hold a mouse button, draw a stroke, and an action fires. Which action depends on the window under the cursor where the stroke started: "left" can go back in Firefox and switch tabs in kitty.
 
-Status: early. Works on Hyprland, KWin, GNOME, sway, niri, Wayfire, COSMIC, labwc, river and X11 desktops.
+Status: early. Works on Hyprland, KWin, GNOME, sway, niri, COSMIC, labwc and X11 desktops.
 
 ## Compositors
 
-wisp detects the compositor on its own. To choose, set `WISP_BACKEND` to `hyprland`, `sway`, `niri`, `wayfire`, `kwin`, `gnome`, `x11`, or `toplevel` (any compositor below that lists its windows).
+wisp detects the compositor on its own. To choose, set `WISP_BACKEND` to `hyprland`, `sway`, `niri`, `kwin`, `gnome`, `x11`, or `toplevel` (any compositor below that lists its windows).
 
 | | Gestures target | Trail | `dispatch` runs |
 |---|---|---|---|
 | Hyprland | the window under the cursor | ✓ | a Hyprland dispatcher |
 | KWin (Plasma 6) | the window under the cursor, through short KWin scripts over D-Bus | ✓ | a KWin shortcut by name, e.g. `"Window Maximize"` |
 | GNOME | the window under the cursor, through wisp's Shell extension | ✓, drawn by the extension | nothing; use `keys` or `command` |
-| Wayfire | the window under the cursor; needs the `ipc` and `ipc-rules` plugins | ✓ | a Wayfire IPC call, `"method {json}"` |
 | X11 (Xfce, Cinnamon, MATE, i3, …) | the window under the cursor | ✓ with a compositing manager | nothing |
 | sway | the focused window | ✓ | a sway command, e.g. `"fullscreen toggle"` |
 | niri | the focused window | ✓ | a niri action, e.g. `"maximize-column"` |
-| COSMIC, labwc, river | the focused window | ✓ | nothing |
+| COSMIC, labwc | the focused window | ✓ | nothing |
 
 "The focused window" means these compositors don't tell other programs which window is under the cursor. With focus-follows-mouse, the focused window is the one under the cursor anyway: sway has it on by default. Without it, gestures act on whichever window has focus, wherever you draw.
 
@@ -142,7 +141,7 @@ The trail's surface exists only while you draw: plain clicks never create one, s
 
 `cargo run -p wisp-input --example probe` tests the input path against a fake mouse without touching your desktop.
 
-`tools/vm/vm.sh` tests the other compositors in a QEMU VM, end to end: a fake mouse inside the guest, wisp's grab, and the compositor on top. `vm.sh setup`, `vm.sh start`, then `vm.sh test sway` (or `kwin`, `gnome`, `niri`, `wayfire`, `labwc`, `cosmic`, `river`, `x11`).
+`tools/vm/vm.sh` tests the other compositors in a QEMU VM, end to end: a fake mouse inside the guest, wisp's grab, and the compositor on top. `vm.sh setup`, `vm.sh start`, then `vm.sh test sway` (or `kwin`, `gnome`, `niri`, `labwc`, `cosmic`, `x11`).
 
 ## License
 
