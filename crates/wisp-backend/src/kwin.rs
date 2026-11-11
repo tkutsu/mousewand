@@ -147,18 +147,6 @@ impl KWin {
     }
 }
 
-/// Whether KWin owns its D-Bus name on the session bus.
-pub fn running() -> bool {
-    let Ok(bus) = Connection::session() else { return false };
-    let Ok(dbus) = zbus::blocking::fdo::DBusProxy::new(&bus) else {
-        return false;
-    };
-    let Ok(name) = "org.kde.KWin".try_into() else {
-        return false;
-    };
-    dbus.name_has_owner(name).unwrap_or(false)
-}
-
 impl Backend for KWin {
     fn pointer_target(&self) -> anyhow::Result<Target> {
         let report: Report = serde_json::from_str(&self.run(TARGET)?)?;
