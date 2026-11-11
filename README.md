@@ -132,6 +132,8 @@ The trail's surface exists only while you draw: plain clicks never create one, s
 
 `cargo run -p wisp-input --example probe` tests the input path against a fake mouse without touching your desktop.
 
+`tools/vm/vm.sh` tests the other compositors in a QEMU VM, end to end: a fake mouse inside the guest, wisp's grab, and sway, KWin or GNOME on top. `vm.sh setup`, `vm.sh start`, then `vm.sh test sway` (or `kwin`, `gnome`).
+
 ## License
 
 MIT or Apache-2.0, at your option.
