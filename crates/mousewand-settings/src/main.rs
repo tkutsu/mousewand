@@ -1,13 +1,15 @@
 //! mousewand-settings: edits mousewand's config files. The settings gesture starts it
 //! with `MOUSEWAND_CLASS` set to the window it was drawn over, so it opens on
 //! that app. `mousewand-settings --class <class>` does the same by hand, and
-//! `--notes` opens it on the daemon's setup notes.
+//! `--notes` opens it on the daemon's setup notes. Only one runs: starting
+//! another brings the open one to the front instead.
 
 mod files;
 
 use std::path::PathBuf;
 
 use files::{App, Dir, Gesture, Settings, State};
+use tauri::Manager;
 
 struct Context {
     dir: Dir,
@@ -32,15 +34,31 @@ fn save(
     context: tauri::State<Context>,
     settings: Settings,
     global: Vec<Gesture>,
-    app: Option<App>,
+    apps: Vec<App>,
 ) -> Result<(), String> {
-    context.dir.save(&settings, &global, app.as_ref())
+    context.dir.save(&settings, &global, &apps)
 }
 
 /// Saves a shape drawn in the window; returns the name it was saved under.
 #[tauri::command]
-fn save_shape(context: tauri::State<Context>, name: String, examples: Vec<Vec<[f64; 2]>>) -> Result<String, String> {
-    context.dir.save_shape(&name, &examples)
+fn save_shape(
+    context: tauri::State<Context>,
+    name: String,
+    examples: Vec<Vec<[f64; 2]>>,
+    redraw: bool,
+) -> Result<String, String> {
+    context.dir.save_shape(&name, &examples, redraw)
+}
+
+#[tauri::command]
+fn delete_shape(context: tauri::State<Context>, name: String) -> Result<(), String> {
+    context.dir.delete_shape(&name)
+}
+
+/// Whether a new drawing of a shape looks like the ones before it.
+#[tauri::command]
+fn alike(examples: Vec<Vec<(f64, f64)>>, drawing: Vec<(f64, f64)>) -> bool {
+    mousewand_core::shape::alike(&examples, &drawing)
 }
 
 /// What the daemon's setup said on this compositor, in
@@ -79,12 +97,26 @@ fn main() {
         None => std::env::var("MOUSEWAND_CLASS").ok(),
     };
     tauri::Builder::default()
+        // First, so a second start exits before opening anything.
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .manage(Context {
             dir: Dir(config_dir()),
             class,
             open_notes: args.iter().any(|a| a == "--notes"),
         })
-        .invoke_handler(tauri::generate_handler![load, save, save_shape, notes])
+        .invoke_handler(tauri::generate_handler![
+            load,
+            save,
+            save_shape,
+            delete_shape,
+            alike,
+            notes
+        ])
         .run(tauri::generate_context!())
         .expect("mousewand-settings failed to start");
 }

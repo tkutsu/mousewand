@@ -18,4 +18,5 @@ mousewand-core.workspace = true
 serde.workspace = true
 toml.workspace = true
 tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
 toml_edit = "0.25"

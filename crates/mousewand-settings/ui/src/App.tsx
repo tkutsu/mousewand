@@ -1,20 +1,31 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as api from "./api";
 import ButtonInput from "./ButtonInput";
+import { problems, sentence } from "./check";
 import GestureList from "./GestureList";
+import SettingsGestures from "./SettingsGestures";
+import Shapes from "./Shapes";
+import { Logo, Problem, Row, Section } from "./ui";
 
-type Tab = "global" | "app" | "setup";
+type Page = "general" | "every" | "app" | "setup";
+
+type Status = { kind: "ok" | "error" | "warn"; text: string } | null;
 
 export default function App() {
   const [state, setState] = useState<api.State | null>(null);
   const [settings, setSettings] = useState<api.Settings | null>(null);
   const [global, setGlobal] = useState<api.Gesture[]>([]);
   const [app, setApp] = useState<api.App | null>(null);
+  const [settingsApp, setSettingsApp] = useState<api.App | null>(null);
+  const [shapes, setShapes] = useState<api.ShapeInfo[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
-  const [shapes, setShapes] = useState<string[]>([]);
-  const [tab, setTab] = useState<Tab>("global");
+  const [page, setPage] = useState<Page>("every");
   const [dirty, setDirty] = useState(false);
-  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [status, setStatus] = useState<Status>(null);
+  // A close asked for with unsaved changes; asking again discards them.
+  const [closing, setClosing] = useState(false);
+  const main = useRef<HTMLElement>(null);
 
   useEffect(() => {
     Promise.all([api.load(), api.notes()])
@@ -23,12 +34,13 @@ export default function App() {
         setSettings(s.settings);
         setGlobal(s.global);
         setApp(s.app);
+        setSettingsApp(s.settingsApp);
         setShapes(s.shapes);
         setNotes(n.notes);
-        if (n.open && n.notes.length > 0) setTab("setup");
-        else if (s.app) setTab("app");
+        if (n.open && n.notes.length > 0) setPage("setup");
+        else setPage(s.app ? "app" : "every");
       })
-      .catch((e) => setStatus({ ok: false, text: String(e) }));
+      .catch((e) => setStatus({ kind: "error", text: sentence(e) }));
   }, []);
 
   const edit =
@@ -37,108 +49,272 @@ export default function App() {
       set(value);
       setDirty(true);
       setStatus(null);
+      setClosing(false);
     };
 
+  const pages: Page[] = [
+    "general",
+    "every",
+    ...(app ? (["app"] as const) : []),
+    ...(notes.length > 0 ? (["setup"] as const) : []),
+  ];
+
+  /** The first page with a gesture that won't save. */
+  const unfinished = (): Page | null => {
+    if (problems(global).some(Boolean)) return "every";
+    if (app && problems(app.gestures).some(Boolean)) return "app";
+    const open = settings?.openSettings;
+    if (open?.input === "stroke" && !open.value) return "general";
+    if (settingsApp && problems(settingsApp.gestures).some(Boolean)) return "general";
+    return null;
+  };
+
   const onSave = async () => {
-    if (!settings) return;
+    if (!settings || !settingsApp || !dirty) return;
+    const where = unfinished();
+    if (where) {
+      setPage(where);
+      setStatus({ kind: "error", text: "Some gestures aren't finished yet: fix the ones marked in red, then save." });
+      return;
+    }
     try {
-      await api.save(settings, global, app);
+      await api.save(settings, global, app ? [app, settingsApp] : [settingsApp]);
       setDirty(false);
-      setStatus({ ok: true, text: "Saved. mousewand picks it up right away." });
+      setStatus({ kind: "ok", text: "Saved. mousewand uses it right away." });
     } catch (e) {
-      setStatus({ ok: false, text: String(e) });
+      setStatus({ kind: "error", text: `Couldn't save: ${sentence(e)}` });
     }
   };
 
-  const shapeProps = {
-    shapes,
-    onNewShape: (name: string) => setShapes((list) => (list.includes(name) ? list : [...list, name])),
+  const addGesture = () => {
+    if (page === "every") edit(setGlobal)([...global, api.newGesture()]);
+    else if (page === "app" && app) edit(setApp)({ ...app, gestures: [...app.gestures, api.newGesture()] });
+    else return;
+    requestAnimationFrame(() => main.current?.scrollTo({ top: main.current.scrollHeight, behavior: "smooth" }));
   };
 
-  if (!state || !settings) {
-    return <div className="p-8 text-sm text-zinc-500">{status?.text ?? "Loading…"}</div>;
+  const close = () => {
+    if (dirty && !closing) {
+      setClosing(true);
+      setStatus({ kind: "warn", text: "You have unsaved changes. Save them, or close again to discard them." });
+      return;
+    }
+    getCurrentWindow().close();
+  };
+
+  // The shortcuts the settings window's gestures press.
+  const shortcuts = useRef<(e: KeyboardEvent) => void>(() => {});
+  shortcuts.current = (e: KeyboardEvent) => {
+    if (!e.ctrlKey || e.altKey || e.metaKey) return;
+    const turn = (by: number) => {
+      const i = pages.indexOf(page);
+      setPage(pages[(i + by + pages.length) % pages.length]);
+    };
+    const run: Record<string, () => void> = {
+      KeyS: onSave,
+      KeyW: close,
+      KeyN: addGesture,
+      Tab: () => turn(e.shiftKey ? -1 : 1),
+    };
+    const action = (!e.shiftKey || e.code === "Tab") && run[e.code];
+    if (action) {
+      e.preventDefault();
+      action();
+    }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => shortcuts.current(e);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // After a shape is drawn, redrawn or removed: its file changed on disk.
+  const reloadShapes = () =>
+    api
+      .load()
+      .then((s) => setShapes(s.shapes))
+      .catch((e) => setStatus({ kind: "error", text: sentence(e) }));
+
+  const shapeProps = { shapes, onNewShape: reloadShapes };
+
+  /** Where the unsaved gestures use a shape, if they do. */
+  const usedWhere = (name: string): string | null => {
+    const uses = (gestures: api.Gesture[]) => gestures.some((g) => g.input === "shape" && g.value === name);
+    if (settings?.openSettings.input === "shape" && settings.openSettings.value === name) return "General";
+    if (uses(global)) return "Every App";
+    if (app && uses(app.gestures)) return `Current App: ${app.classes[0]}`;
+    if (settingsApp && uses(settingsApp.gestures)) return "General";
+    return null;
+  };
+
+  if (!state || !settings || !settingsApp) {
+    return (
+      <div className="grid h-screen place-items-center p-8">
+        {status ? <Problem>{status.text}</Problem> : <span className="text-ink-2">Loading…</span>}
+      </div>
+    );
   }
 
+  const titles: Record<Page, string> = {
+    app: `Current App: ${app?.classes[0] ?? ""}`,
+    every: "Every App",
+    general: "General",
+    setup: "Setup",
+  };
+
   return (
-    <div className="flex h-screen flex-col">
-      <header className="flex items-center gap-6 border-b border-zinc-200 px-6 pt-4 dark:border-zinc-800">
-        <span className="pb-3 text-lg font-semibold tracking-tight">mousewand</span>
-        <nav className="flex gap-1">
-          <TabButton active={tab === "global"} onClick={() => setTab("global")}>
-            Everywhere
-          </TabButton>
-          {app && (
-            <TabButton active={tab === "app"} onClick={() => setTab("app")}>
-              {app.classes[0]}
-            </TabButton>
-          )}
-          {notes.length > 0 && (
-            <TabButton active={tab === "setup"} onClick={() => setTab("setup")}>
-              Setup
-            </TabButton>
-          )}
+    <div className="flex h-screen">
+      <aside className="flex w-52 shrink-0 flex-col border-r border-line bg-sidebar px-2.5 pt-4 pb-3">
+        <div className="flex items-center gap-2 px-2 pb-4">
+          <Logo className="size-5" />
+          <span className="text-[15px] font-semibold tracking-tight">mousewand</span>
+        </div>
+        <nav className="flex flex-col gap-0.5">
+          {pages.map((p) => (
+            <NavItem key={p} page={p} current={page} onSelect={setPage}>
+              {titles[p]}
+            </NavItem>
+          ))}
         </nav>
-        <span className="ml-auto truncate pb-3 font-mono text-xs text-zinc-400" title={state.dir}>
-          {state.dir}
+        <span className="mt-auto truncate px-2 font-mono text-[10px] text-ink-3" title={state.dir}>
+          {state.dir.replace(/^\/home\/[^/]+/, "~")}
         </span>
-      </header>
+      </aside>
 
-      <main className="flex-1 overflow-y-auto px-6 py-5">
-        {tab === "setup" ? (
-          <SetupTab notes={notes} />
-        ) : tab === "global" ? (
-          <div className="flex flex-col gap-6">
-            <Section title="Settings">
-              <SettingsForm settings={settings} themes={state.themes} onChange={edit(setSettings)} />
-            </Section>
-            <Section title="Gestures for every app" hint="An app's own gestures override these.">
-              <GestureList gestures={global} onChange={edit(setGlobal)} {...shapeProps} />
-            </Section>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <main ref={main} className="flex-1 overflow-y-auto">
+          <div className="mx-auto flex max-w-4xl flex-col gap-6 px-8 pt-6 pb-10">
+            <h1 className="text-[20px] font-semibold tracking-tight">{titles[page]}</h1>
+            {page === "general" && (
+              <>
+                <GeneralPage settings={settings} themes={state.themes} onChange={edit(setSettings)} />
+                <SettingsGestures
+                  settings={settings}
+                  app={settingsApp}
+                  onSettings={edit(setSettings)}
+                  onApp={edit(setSettingsApp)}
+                  shapes={shapes.map((s) => s.name)}
+                  onNewShape={reloadShapes}
+                />
+                <Shapes shapes={shapes} usedWhere={usedWhere} onChanged={reloadShapes} />
+              </>
+            )}
+            {page === "every" && (
+              <GestureList
+                title="Gestures"
+                note="Every app gets these, unless it has its own gesture for the same input."
+                gestures={global}
+                onChange={edit(setGlobal)}
+                {...shapeProps}
+              />
+            )}
+            {page === "app" && app && (
+              <AppPage app={app} presets={state.presets} onChange={edit(setApp)} shapeProps={shapeProps} />
+            )}
+            {page === "setup" && <SetupPage notes={notes} />}
           </div>
-        ) : (
-          app && <AppTab app={app} presets={state.presets} onChange={edit(setApp)} shapeProps={shapeProps} />
-        )}
-      </main>
+        </main>
 
-      <footer className="flex items-center gap-4 border-t border-zinc-200 px-6 py-3 dark:border-zinc-800">
-        <p className={`flex-1 text-sm ${status?.ok === false ? "text-red-500" : "text-zinc-500"}`}>
-          {status?.text ?? (dirty ? "Unsaved changes" : "Keys are physical positions (US layout), whatever your layout.")}
-        </p>
-        <button className="button bg-accent text-white hover:brightness-110" disabled={!dirty} onClick={onSave}>
-          Save
-        </button>
-      </footer>
+        <footer className="flex items-center gap-4 border-t border-line bg-window/80 px-8 py-3 backdrop-blur">
+          <div className="min-w-0 flex-1">
+            {status?.kind === "error" || status?.kind === "warn" ? (
+              <Problem>{status.text}</Problem>
+            ) : (
+              <p className="truncate text-[12px] text-ink-2">
+                {status?.text ??
+                  (dirty ? "Unsaved changes" : "Keys are physical positions on a US layout, whatever your layout.")}
+              </p>
+            )}
+          </div>
+          <button className="button primary" disabled={!dirty} onClick={onSave} title="Ctrl+S">
+            Save
+          </button>
+        </footer>
+      </div>
     </div>
   );
 }
 
-function SetupTab({ notes }: { notes: string[] }) {
+function NavItem({
+  page,
+  current,
+  onSelect,
+  children,
+}: {
+  page: Page;
+  current: Page;
+  onSelect: (page: Page) => void;
+  children: ReactNode;
+}) {
+  const active = page === current;
   return (
-    <Section title="On this desktop" hint="mousewand shows these once, and again when something new comes up.">
-      <ul className="flex max-w-2xl flex-col gap-3">
-        {notes.map((note) => (
-          <li
-            key={note}
-            className="rounded-lg border border-zinc-200 px-4 py-3 text-sm leading-relaxed dark:border-zinc-800"
-          >
-            {/* `code` in backticks: odd parts are code. */}
-            {note.split("`").map((part, i) =>
-              i % 2 ? (
-                <code key={i} className="rounded bg-zinc-100 px-1 font-mono text-[0.85em] dark:bg-zinc-800">
-                  {part}
-                </code>
-              ) : (
-                part
-              ),
-            )}
-          </li>
-        ))}
-      </ul>
-    </Section>
+    <button
+      className={`flex h-7 items-center gap-2 rounded-md px-2 text-left text-[13px] ${
+        active ? "bg-accent text-white" : "hover:bg-ink/5"
+      }`}
+      onClick={() => onSelect(page)}
+    >
+      <span className="truncate">{children}</span>
+    </button>
   );
 }
 
-function AppTab({
+function GeneralPage({
+  settings,
+  themes,
+  onChange,
+}: {
+  settings: api.Settings;
+  themes: string[];
+  onChange: (settings: api.Settings) => void;
+}) {
+  const set = (patch: Partial<api.Settings>) => onChange({ ...settings, ...patch });
+  const number = (key: "threshold" | "holdMs" | "minSegment", unit: string) => (
+    <>
+      <input
+        className="field w-20 text-right"
+        type="number"
+        min={1}
+        value={settings[key]}
+        onChange={(e) => set({ [key]: Number(e.target.value) })}
+      />
+      <span className="w-5 text-ink-2">{unit}</span>
+    </>
+  );
+  return (
+    <>
+      <Section note="Hold it and draw. A quick click is still a click.">
+        <Row label="Trigger button">
+          <div className="w-72">
+            <ButtonInput value={settings.trigger} onChange={(trigger) => set({ trigger })} />
+          </div>
+        </Row>
+      </Section>
+      <Section title="Feel">
+        <Row label="Start after" hint="How far to move before a press becomes a gesture">
+          {number("threshold", "px")}
+        </Row>
+        <Row label="Hold still for" hint="Holding still this long makes it a normal press, for dragging">
+          {number("holdMs", "ms")}
+        </Row>
+        <Row label="Ignore strokes under" hint="Shorter wiggles don't count as a direction">
+          {number("minSegment", "px")}
+        </Row>
+      </Section>
+      <Section title="Trail">
+        <Row label="Theme" hint="Themes are files in themes/">
+          <select className="field w-40" value={settings.theme} onChange={(e) => set({ theme: e.target.value })}>
+            {themes.map((t) => (
+              <option key={t}>{t}</option>
+            ))}
+          </select>
+        </Row>
+      </Section>
+    </>
+  );
+}
+
+function AppPage({
   app,
   presets,
   onChange,
@@ -147,9 +323,10 @@ function AppTab({
   app: api.App;
   presets: api.Preset[];
   onChange: (app: api.App) => void;
-  shapeProps: { shapes: string[]; onNewShape: (name: string) => void };
+  shapeProps: { shapes: api.ShapeInfo[]; onNewShape: (name: string) => void };
 }) {
-  const matching = presets.filter((p) => p.classes.some((c) => app.classes.some((a) => a.toLowerCase() === c.toLowerCase())));
+  const lower = (s: string) => s.toLowerCase();
+  const matching = presets.filter((p) => p.classes.some((c) => app.classes.map(lower).includes(lower(c))));
   const others = presets.filter((p) => !matching.includes(p));
   const [preset, setPreset] = useState(matching[0]?.name ?? "");
 
@@ -163,30 +340,30 @@ function AppTab({
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <Section title="Window classes" hint={`Saved in apps/${app.file}.toml`}>
-        <input
-          className="field w-full max-w-md font-mono"
-          value={app.classes.join(", ")}
-          onChange={(e) =>
-            onChange({
-              ...app,
-              classes: e.target.value
-                .split(",")
-                .map((c) => c.trim())
-                .filter(Boolean),
-            })
-          }
-        />
-      </Section>
-      <Section title="Presets">
-        <div className="flex gap-2">
-          <select className="field" value={preset} onChange={(e) => setPreset(e.target.value)}>
+    <>
+      <Section note={`Saved in apps/${app.file}.toml`}>
+        <Row label="Window classes" hint="Separate several with commas">
+          <input
+            className="field w-72 font-mono"
+            value={app.classes.join(", ")}
+            onChange={(e) =>
+              onChange({
+                ...app,
+                classes: e.target.value
+                  .split(",")
+                  .map((c) => c.trim())
+                  .filter(Boolean),
+              })
+            }
+          />
+        </Row>
+        <Row label="Preset" hint="Adds its gestures, replacing yours for the same input">
+          <select className="field w-48" value={preset} onChange={(e) => setPreset(e.target.value)}>
             <option value="" disabled>
-              Choose a preset…
+              Choose…
             </option>
             {matching.length > 0 && (
-              <optgroup label="For this app">
+              <optgroup label="For This App">
                 {matching.map((p) => (
                   <option key={p.name}>{p.name}</option>
                 ))}
@@ -198,94 +375,38 @@ function AppTab({
               ))}
             </optgroup>
           </select>
-          <button
-            className="button border border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-            disabled={!preset}
-            onClick={addPreset}
-          >
-            Add its gestures
+          <button className="button" disabled={!preset} onClick={addPreset}>
+            Add
           </button>
-        </div>
+        </Row>
       </Section>
-      <Section title={`Gestures for ${app.classes[0] ?? app.file}`}>
-        <GestureList gestures={app.gestures} onChange={(gestures) => onChange({ ...app, gestures })} {...shapeProps} />
-      </Section>
-    </div>
+      <GestureList
+        title="Gestures"
+        gestures={app.gestures}
+        onChange={(gestures) => onChange({ ...app, gestures })}
+        {...shapeProps}
+      />
+    </>
   );
 }
 
-function SettingsForm({
-  settings,
-  themes,
-  onChange,
-}: {
-  settings: api.Settings;
-  themes: string[];
-  onChange: (settings: api.Settings) => void;
-}) {
-  const set = (patch: Partial<api.Settings>) => onChange({ ...settings, ...patch });
-  const number = (key: "threshold" | "holdMs" | "minSegment") => (
-    <input
-      className="field w-24"
-      type="number"
-      min={1}
-      value={settings[key]}
-      onChange={(e) => set({ [key]: Number(e.target.value) })}
-    />
-  );
+function SetupPage({ notes }: { notes: string[] }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-4">
-      <div className="col-span-2">
-        <Labeled label="Trigger button">
-          <ButtonInput value={settings.trigger} onChange={(trigger) => set({ trigger })} />
-        </Labeled>
-      </div>
-      <Labeled label="Trail theme">
-        <select className="field" value={settings.theme} onChange={(e) => set({ theme: e.target.value })}>
-          {themes.map((t) => (
-            <option key={t}>{t}</option>
-          ))}
-        </select>
-      </Labeled>
-      <Labeled label="Start after (px)">{number("threshold")}</Labeled>
-      <Labeled label="Hold still for (ms)">{number("holdMs")}</Labeled>
-      <Labeled label="Ignore strokes under (px)">{number("minSegment")}</Labeled>
-    </div>
-  );
-}
-
-function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-baseline gap-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {hint && <span className="text-xs text-zinc-500">{hint}</span>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Labeled({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="label">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      className={`-mb-px border-b-2 px-3 pb-3 text-sm transition ${
-        active
-          ? "border-accent font-medium text-zinc-900 dark:text-zinc-100"
-          : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-      }`}
-      onClick={onClick}
-    >
-      {children}
-    </button>
+    <Section title="On This Desktop" note="mousewand shows these once, and again when something new comes up.">
+      {notes.map((note) => (
+        <p key={note} className="px-3 py-3 leading-relaxed">
+          {/* `code` in backticks: odd parts are code. */}
+          {note.split("`").map((part, i) =>
+            i % 2 ? (
+              <code key={i} className="rounded bg-ink/[0.06] px-1 font-mono text-[0.92em]">
+                {part}
+              </code>
+            ) : (
+              part
+            ),
+          )}
+        </p>
+      ))}
+    </Section>
   );
 }

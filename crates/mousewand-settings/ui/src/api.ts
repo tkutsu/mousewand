@@ -12,12 +12,17 @@ export type Gesture = {
   name: string | null;
 };
 
+/** A stroke or a shape. */
+export type Drawn = { input: "stroke" | "shape"; value: string };
+
 export type Settings = {
   trigger: string;
   threshold: number;
   holdMs: number;
   minSegment: number;
   theme: string;
+  /** What opens this app. */
+  openSettings: Drawn;
 };
 
 export type App = {
@@ -32,14 +37,24 @@ export type Preset = {
   gestures: Gesture[];
 };
 
+export type ShapeInfo = {
+  name: string;
+  /** Built in, not drawn: nothing to redraw or remove. */
+  builtIn: boolean;
+  /** Its first example, about 1 across, for a thumbnail. */
+  outline: [number, number][];
+};
+
 export type State = {
   dir: string;
   settings: Settings;
   global: Gesture[];
   app: App | null;
+  /** The gestures over this app's own window. */
+  settingsApp: App;
   themes: string[];
   /** The built-in shapes, then the drawn ones. */
-  shapes: string[];
+  shapes: ShapeInfo[];
   presets: Preset[];
 };
 
@@ -50,12 +65,20 @@ export type Notes = { notes: string[]; open: boolean };
 
 export const notes = () => invoke<Notes>("notes");
 
-/** Saves a drawn shape, each example a list of [x, y]; resolves to its file name. */
-export const saveShape = (name: string, examples: [number, number][][]) =>
-  invoke<string>("save_shape", { name, examples });
+/** Saves a drawn shape, each example a list of [x, y]; resolves to its file name. Only a redraw may replace one. */
+export const saveShape = (name: string, examples: [number, number][][], redraw: boolean) =>
+  invoke<string>("save_shape", { name, examples, redraw });
 
-export const save = (settings: Settings, global: Gesture[], app: App | null) =>
-  invoke<void>("save", { settings, global, app });
+/** Removes a drawn shape, unless a saved gesture uses it. */
+export const deleteShape = (name: string) => invoke<void>("delete_shape", { name });
+
+/** Whether a new drawing looks like the ones before it. */
+export const alike = (examples: [number, number][][], drawing: [number, number][]) =>
+  invoke<boolean>("alike", { examples, drawing });
+
+/** Saves the settings, the gestures for every app, and these apps' files. */
+export const save = (settings: Settings, global: Gesture[], apps: App[]) =>
+  invoke<void>("save", { settings, global, apps });
 
 export const newGesture = (): Gesture => ({
   input: "stroke",

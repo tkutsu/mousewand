@@ -50,7 +50,7 @@ export default function ButtonInput({ value, onChange }: { value: string; onChan
   }, [detecting, onChange]);
 
   return (
-    <div className="flex gap-1">
+    <div className="flex gap-1.5">
       <select
         className="field min-w-0 flex-1"
         value={value}
@@ -65,11 +65,7 @@ export default function ButtonInput({ value, onChange }: { value: string; onChan
         ))}
       </select>
       <button
-        className={`button whitespace-nowrap ${
-          detecting
-            ? "bg-red-500 text-white"
-            : "border border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-        }`}
+        className={`button ${detecting ? "recording" : ""}`}
         title="Press the button on your mouse. Esc or a left click cancels."
         onClick={(e) => {
           e.preventDefault();

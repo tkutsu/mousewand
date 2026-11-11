@@ -1,30 +1,103 @@
 @import "tailwindcss";
 
+/* macOS System Settings: a sidebar, grouped boxes on a soft background, and
+   the system blue. Every color is a token that flips with the system's dark
+   mode preference. */
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --color-accent: #4f9cf5;
+  --font-sans: -apple-system, "SF Pro Text", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  --color-accent: var(--accent);
+  --color-window: var(--window);
+  --color-sidebar: var(--sidebar);
+  --color-group: var(--group);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-control: var(--control);
+  --color-danger: var(--danger);
 }
 
 :root {
   color-scheme: light dark;
+  --accent: #007aff;
+  --window: #f5f5f7;
+  --sidebar: #e9e9ec;
+  --group: #ffffff;
+  --line: rgb(0 0 0 / 0.09);
+  --ink: #1d1d1f;
+  --ink-2: #6e6e73;
+  --ink-3: #a1a1a6;
+  --control: #ffffff;
+  --danger: #e5484d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #0a84ff;
+    --window: #1e1e20;
+    --sidebar: #2a2a2d;
+    --group: #2c2c2e;
+    --line: rgb(255 255 255 / 0.09);
+    --ink: #f5f5f7;
+    --ink-2: #98989d;
+    --ink-3: #636366;
+    --control: #3a3a3c;
+    --danger: #ff6369;
+  }
 }
 
 body {
-  @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+  @apply bg-window text-[13px] text-ink antialiased select-none;
+}
+
+input,
+textarea {
+  @apply select-text;
 }
 
 .field {
-  @apply h-8 rounded-md border border-zinc-300 bg-white px-2 text-sm outline-none transition
-    focus:border-accent focus:ring-2 focus:ring-accent/25
-    dark:border-zinc-700 dark:bg-zinc-900;
+  @apply h-7 rounded-md border border-line bg-control px-2 text-[13px] shadow-[0_0.5px_1px_rgb(0_0_0/0.06)]
+    outline-none transition focus:border-accent focus:ring-[3px] focus:ring-accent/25;
+}
+
+.field.invalid {
+  @apply border-danger/60 focus:border-danger focus:ring-danger/20;
 }
 
 .label {
-  @apply text-xs font-medium text-zinc-500 dark:text-zinc-400;
+  @apply text-[11px] font-medium text-ink-2;
 }
 
 .button {
-  @apply h-8 rounded-md px-3 text-sm font-medium transition
-    disabled:cursor-not-allowed disabled:opacity-40;
+  @apply inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-control px-3 text-[13px]
+    font-medium whitespace-nowrap shadow-[0_0.5px_1px_rgb(0_0_0/0.08)] transition
+    hover:brightness-[0.97] active:brightness-90 disabled:cursor-default disabled:opacity-40
+    dark:hover:brightness-110;
+}
+
+.button.primary {
+  @apply border-transparent bg-accent text-white;
+}
+
+.button.plain {
+  @apply border-transparent bg-transparent shadow-none hover:bg-ink/5;
+}
+
+.button.recording {
+  @apply border-transparent bg-danger text-white;
+}
+
+/* A drawing turned away while teaching a shape. */
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
 }
