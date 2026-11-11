@@ -54,7 +54,7 @@ function Row({
         >
           <option value="stroke">Stroke</option>
           <option value="wheel">Wheel</option>
-          <option value="rocker">Rocker click</option>
+          <option value="click">Click</option>
         </select>
       </Field>
 
@@ -83,7 +83,7 @@ function Row({
           </select>
         </Field>
       )}
-      {g.input === "rocker" && (
+      {g.input === "click" && (
         <Field label="Button">
           <select className="field" value={g.value} onChange={(e) => onChange({ value: e.target.value })}>
             <option value="left">Left</option>

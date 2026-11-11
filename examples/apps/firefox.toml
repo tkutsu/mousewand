@@ -42,8 +42,8 @@ wheel = "down"
 name = "Next tab"
 action = { keys = "ctrl+Tab" }
 
-# Rocker: hold the trigger and click right to reopen the last closed tab.
+# Hold the trigger and click right to reopen the last closed tab.
 [[gesture]]
-rocker = "right"
+click = "right"
 name = "Reopen closed tab"
 action = { keys = "ctrl+shift+t" }

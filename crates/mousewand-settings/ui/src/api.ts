@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type Gesture = {
-  input: "stroke" | "wheel" | "rocker";
+  input: "stroke" | "wheel" | "click";
   value: string;
   kind: "oneshot" | "repeat" | "hold";
   step: number | null;

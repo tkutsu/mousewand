@@ -15,13 +15,14 @@ use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, val
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Gesture {
-    /// "stroke", "wheel" or "rocker".
+    /// "stroke", "wheel" or "click".
     pub input: String,
-    /// The stroke, wheel direction or rocker button.
+    /// The stroke, wheel direction or clicked button.
     pub value: String,
-    /// "oneshot", "repeat" or "hold".
+    /// "oneshot", "repeat" or "hold": `repeat = true`, or `hold` in the action.
     pub kind: String,
     pub step: Option<f64>,
+    /// The keys a "hold" gesture holds down.
     pub hold: Option<String>,
     /// "keys", "command" or "dispatch".
     pub action: String,
@@ -88,7 +89,8 @@ impl Dir {
         let config = Config::parse(&main, &[]).map_err(|e| e.to_string())?;
         let s = &config.settings;
         let settings = Settings {
-            trigger: table.get("trigger").and_then(|t| t.as_str()).unwrap_or("middle").into(),
+            // By its usual name, so "side" shows as "back".
+            trigger: s.trigger.to_string(),
             threshold: s.threshold,
             hold_ms: s.hold_ms,
             min_segment: s.min_segment,
@@ -239,25 +241,35 @@ fn gestures_of(table: &toml::Table) -> Result<Vec<Gesture>, String> {
 
 fn gesture_of(table: &toml::Table) -> Result<Gesture, String> {
     let text = |key: &str| table.get(key).and_then(|v| v.as_str()).map(String::from);
-    let (input, value) = ["stroke", "wheel", "rocker"]
+    let (input, value) = ["stroke", "wheel", "click"]
         .into_iter()
         .find_map(|key| Some((key.to_string(), text(key)?)))
-        .ok_or("a gesture needs a stroke, wheel or rocker")?;
+        .ok_or("a gesture needs a stroke, wheel or click")?;
     let action = table
         .get("action")
         .and_then(|a| a.as_table())
-        .and_then(|a| a.iter().next())
         .ok_or("a gesture needs an action")?;
+    let (what, target) = ["keys", "command", "dispatch"]
+        .into_iter()
+        .find_map(|key| Some((key.to_string(), action.get(key)?.as_str()?.to_string())))
+        .ok_or("an action needs keys, a command or a dispatch")?;
+    let hold = action.get("hold").and_then(|h| h.as_str()).map(String::from);
+    let repeat = table.get("repeat").and_then(|r| r.as_bool()) == Some(true);
     Ok(Gesture {
         input,
         value,
-        kind: text("kind").unwrap_or_else(|| "oneshot".into()),
+        kind: match (&hold, repeat) {
+            (Some(_), _) => "hold",
+            (None, true) => "repeat",
+            (None, false) => "oneshot",
+        }
+        .into(),
         step: table
             .get("step")
             .and_then(|s| s.as_float().or(s.as_integer().map(|i| i as f64))),
-        hold: text("hold"),
-        action: action.0.clone(),
-        target: action.1.as_str().unwrap_or_default().into(),
+        hold,
+        action: what,
+        target,
         name: text("name"),
     })
 }
@@ -300,19 +312,24 @@ fn set_gestures(doc: &mut DocumentMut, gestures: &[Gesture]) {
         if let Some(name) = g.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
             table["name"] = value(name);
         }
-        if g.input == "stroke" && g.kind != "oneshot" {
-            table["kind"] = value(&g.kind);
+        let continuous = g.input == "stroke" && g.kind != "oneshot";
+        if continuous {
+            // Holding keys implies repeating.
+            if g.kind == "repeat" {
+                table["repeat"] = value(true);
+            }
             if let Some(step) = g.step {
                 table["step"] = value(step);
-            }
-            if g.kind == "hold"
-                && let Some(hold) = &g.hold
-            {
-                table["hold"] = value(hold);
             }
         }
         let mut action = InlineTable::new();
         action.insert(&g.action, g.target.as_str().into());
+        if continuous
+            && g.kind == "hold"
+            && let Some(hold) = &g.hold
+        {
+            action.insert("hold", hold.as_str().into());
+        }
         table["action"] = Item::Value(action.into());
         list.push(table);
     }
@@ -399,7 +416,7 @@ mod tests {
         .unwrap();
 
         let state = dir.load(Some("Firefox")).unwrap();
-        assert_eq!(state.settings.trigger, "side");
+        assert_eq!(state.settings.trigger, "back", "evdev's name shows as the usual one");
         assert_eq!(state.global, [keys("L", "a")]);
         let mut app = state.app.unwrap();
         assert_eq!(app.file, "browser");
@@ -411,6 +428,11 @@ mod tests {
             name: Some("Next tab".into()),
             ..keys("U", "ctrl+Tab")
         });
+        app.gestures.push(Gesture {
+            kind: "hold".into(),
+            hold: Some("alt".into()),
+            ..keys("7", "Tab")
+        });
         dir.save(&state.settings, &[keys("R", "b")], Some(&app)).unwrap();
 
         let main = std::fs::read_to_string(path.join("config.toml")).unwrap();
@@ -418,13 +440,23 @@ mod tests {
         let browser = std::fs::read_to_string(path.join("apps/browser.toml")).unwrap();
         assert!(browser.starts_with("# browsers"), "{browser}");
         assert!(browser.contains("name = \"Next tab\""), "{browser}");
+        assert!(browser.contains("repeat = true"), "{browser}");
+        assert!(
+            browser.contains("action = { keys = \"Tab\", hold = \"alt\" }"),
+            "{browser}"
+        );
         // Sections the app doesn't edit stay as they were.
         assert!(main.contains("[hint]") && main.contains("[[global.gesture]]"), "{main}");
         let again = dir.load(Some("firefox")).unwrap();
         assert_eq!(again.global, [keys("R", "b")]);
         let gestures = again.app.unwrap().gestures;
-        assert_eq!(gestures.len(), 2);
+        assert_eq!(gestures.len(), 3);
         assert_eq!(gestures[1].name.as_deref(), Some("Next tab"));
+        assert_eq!(gestures[1].kind, "repeat");
+        assert_eq!(
+            (gestures[2].kind.as_str(), gestures[2].hold.as_deref()),
+            ("hold", Some("alt"))
+        );
     }
 
     #[test]

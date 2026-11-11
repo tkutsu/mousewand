@@ -53,7 +53,7 @@ impl Daemon {
             }
             Output::Motion(dx, dy) => self.run(|s| s.motion(dx, dy)),
             Output::Wheel(wheel) => self.run(|s| s.wheel(wheel)),
-            Output::Rocker(button) => self.run(|s| s.rocker(button)),
+            Output::Click(button) => self.run(|s| s.click(button)),
             Output::End(stroke) => {
                 if let Some(active) = &mut self.active {
                     active.stroke = stroke.clone();
@@ -231,7 +231,7 @@ fn spawn(command: &str, window: &Window) -> anyhow::Result<()> {
 
 fn not_found(command: &str) -> String {
     if command == "mousewand-settings" {
-        return "Drawing a W opens the settings app, mousewand-settings, which isn't installed. \
+        return "Drawing an M opens the settings app, mousewand-settings, which isn't installed. \
                 The README's Settings app section shows how to build it."
             .into();
     }
