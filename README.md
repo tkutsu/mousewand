@@ -186,6 +186,14 @@ fade_ms = 400         # fade after release
 glow = 0.9            # 0 is a plain line
 ```
 
+For a gradient, list colors from head to tail:
+
+```toml
+color = ["#ffd36e", "#ff8a5c", "#e85d8a", "#7b4bb7"]
+```
+
+The examples include ember, laser, sakura, mint, rainbow, sunset and fire.
+
 ### Using the selected text
 
 Commands can read the selection: `wl-paste --primary` prints it on Wayland, and `xclip -o` on X11.

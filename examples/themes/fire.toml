@@ -1,0 +1,7 @@
+# White-hot at the head, burning down to red.
+color = ["#fff3b0", "#ffc94a", "#ff7a1a", "#d62a0e"]
+rejected = "#7f8ca3"
+width = 32
+life_ms = 500
+fade_ms = 350
+glow = 1.0

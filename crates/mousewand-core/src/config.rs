@@ -37,8 +37,7 @@ pub struct Config {
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Theme {
-    #[serde(deserialize_with = "parsed")]
-    pub color: Color,
+    pub color: Gradient,
     /// The trail's color when the stroke matched nothing.
     #[serde(deserialize_with = "parsed")]
     pub rejected: Color,
@@ -55,7 +54,7 @@ pub struct Theme {
 impl Default for Theme {
     fn default() -> Self {
         Theme {
-            color: Color([0.45, 0.75, 1.0]),
+            color: Gradient(vec![Color([0.45, 0.75, 1.0])]),
             rejected: Color([1.0, 0.35, 0.35]),
             width: 26.0,
             life_ms: 450,
@@ -94,6 +93,31 @@ impl FromStr for Color {
             (Some(r), Some(g), Some(b)) => Ok(Color([r, g, b])),
             _ => Err(format!("bad color {s:?}: write it as \"#rrggbb\"")),
         }
+    }
+}
+
+/// The trail's colors from head to tail, written as one `"#rrggbb"` or a
+/// list of them. The trail blends evenly from one to the next.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Gradient(pub Vec<Color>);
+
+impl<'de> Deserialize<'de> for Gradient {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let bad = || de::Error::custom("write color as \"#rrggbb\" or a list of them");
+        let stops: Vec<String> = match toml::Value::deserialize(d)? {
+            toml::Value::String(s) => vec![s],
+            toml::Value::Array(list) => list
+                .into_iter()
+                .map(|v| v.as_str().map(String::from))
+                .collect::<Option<_>>()
+                .ok_or_else(bad)?,
+            _ => return Err(bad()),
+        };
+        if stops.is_empty() {
+            return Err(bad());
+        }
+        let colors = stops.iter().map(|s| s.parse()).collect::<Result<_, String>>();
+        colors.map(Gradient).map_err(de::Error::custom)
     }
 }
 
@@ -1089,10 +1113,33 @@ mod tests {
     #[test]
     fn themes() {
         let theme = Theme::parse("x", "color = \"#ff8000\"\nwidth = 40").unwrap();
-        assert_eq!(theme.color, Color([1.0, 128.0 / 255.0, 0.0]));
+        assert_eq!(theme.color, Gradient(vec![Color([1.0, 128.0 / 255.0, 0.0])]));
         assert_eq!(theme.width, 40.0);
         assert_eq!(theme.life_ms, Theme::default().life_ms);
+        let rainbow = Theme::parse("x", "color = [\"#ff0000\", \"#0000ff\"]").unwrap();
+        assert_eq!(
+            rainbow.color,
+            Gradient(vec![Color([1.0, 0.0, 0.0]), Color([0.0, 0.0, 1.0])])
+        );
         assert!(Theme::parse("x", "color = \"orange\"").unwrap_err().contains("#rrggbb"));
+        assert!(
+            Theme::parse("x", "color = [\"#ff0000\", \"red\"]")
+                .unwrap_err()
+                .contains("#rrggbb")
+        );
+        assert!(Theme::parse("x", "color = []").unwrap_err().contains("list"));
+        assert!(Theme::parse("x", "color = 3").unwrap_err().contains("list"));
+        for (name, text) in [
+            ("ember", include_str!("../../../examples/themes/ember.toml")),
+            ("fire", include_str!("../../../examples/themes/fire.toml")),
+            ("laser", include_str!("../../../examples/themes/laser.toml")),
+            ("mint", include_str!("../../../examples/themes/mint.toml")),
+            ("rainbow", include_str!("../../../examples/themes/rainbow.toml")),
+            ("sakura", include_str!("../../../examples/themes/sakura.toml")),
+            ("sunset", include_str!("../../../examples/themes/sunset.toml")),
+        ] {
+            Theme::parse(name, text).unwrap();
+        }
         assert!(Theme::parse("x", "width = 0").is_err());
         assert!(Theme::parse("x", "colour = \"#ffffff\"").is_err());
     }

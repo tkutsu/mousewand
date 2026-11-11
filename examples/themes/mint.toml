@@ -1,0 +1,6 @@
+# Cool and fresh, light at the head.
+color = ["#c8fff0", "#5ed6b4"]
+width = 24
+life_ms = 450
+fade_ms = 300
+glow = 0.6

@@ -1,0 +1,7 @@
+# Every color, head to tail. It lingers so you can see them all.
+color = ["#ff5e5e", "#ffb347", "#fff275", "#7cf29a", "#6ec6ff", "#b28dff"]
+rejected = "#7f8ca3"
+width = 30
+life_ms = 700
+fade_ms = 400
+glow = 0.7
