@@ -6,7 +6,6 @@
 export XDG_RUNTIME_DIR=/run/user/1000
 bash ~/switch.sh sway > /dev/null
 S=$(ls /run/user/1000/sway-ipc.*.sock)
-before=$(ls /run/user/1000 | grep -E "^wayland-[0-9]+$")
 case "$1" in
   niri)
     # The setup the README recommends: focus follows the mouse.
@@ -19,7 +18,8 @@ case "$1" in
 esac
 SWAYSOCK=$S swaymsg -q "exec $cmd > ~/nested-$1.log 2>&1"
 sleep 6
-display=$(ls /run/user/1000 | grep -E "^wayland-[0-9]+$" | grep -vxF "$before" | head -1)
+# The nested compositor's socket is the newest one.
+display=$(ls -t /run/user/1000 | grep -E "^wayland-[0-9]+$" | head -1)
 (WAYLAND_DISPLAY=$display setsid foot > /dev/null 2>&1 &)
 sleep 1.5
 (WAYLAND_DISPLAY=$display setsid foot --app-id=other > /dev/null 2>&1 &)
