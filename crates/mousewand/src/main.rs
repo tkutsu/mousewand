@@ -9,7 +9,7 @@ use std::sync::mpsc;
 use std::thread;
 
 use anyhow::Context;
-use mousewand_core::{Output, Trail};
+use mousewand_core::{Output, Trail, Trigger};
 use mousewand_input::Input;
 use mousewand_overlay::{Overlay, X11Overlay};
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
@@ -17,7 +17,7 @@ use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 use daemon::Daemon;
 
 enum Msg {
-    Gesture(Output),
+    Gesture(Output, Trigger),
     ConfigChanged,
     Quit,
 }
@@ -39,8 +39,8 @@ fn main() -> anyhow::Result<()> {
 
     let (tx, rx) = mpsc::channel();
     let gestures = tx.clone();
-    let input = Input::start(config.settings.clone(), move |output| {
-        let _ = gestures.send(Msg::Gesture(output));
+    let input = Input::start(config.settings.clone(), move |output, trigger| {
+        let _ = gestures.send(Msg::Gesture(output, trigger));
     })?;
     let changed = tx.clone();
     config::watch(&dir, move || {
@@ -65,17 +65,19 @@ fn main() -> anyhow::Result<()> {
     });
     if let Some(overlay) = &overlay {
         overlay.set_theme(config.theme.clone());
+        overlay.set_hint_style(config.hint.clone());
     }
     let mut daemon = Daemon::new(config, backend, input, overlay);
     for msg in rx {
         match msg {
-            Msg::Gesture(output) => daemon.on_output(output),
+            Msg::Gesture(output, trigger) => daemon.on_output(output, trigger),
             Msg::ConfigChanged => match config::load(&dir) {
                 Ok(new) => {
                     log::info!("config reloaded");
                     daemon.input.set_settings(new.settings.clone());
                     if let Some(overlay) = &daemon.overlay {
                         overlay.set_theme(new.theme.clone());
+                        overlay.set_hint_style(new.hint.clone());
                     }
                     daemon.config = new;
                 }

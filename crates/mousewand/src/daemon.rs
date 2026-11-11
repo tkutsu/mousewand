@@ -5,8 +5,7 @@ use std::thread;
 
 use anyhow::Context;
 use mousewand_backend::{Backend, Target, Window};
-use mousewand_core::Trail;
-use mousewand_core::{Action, Config, Fire, Output, Session};
+use mousewand_core::{Action, Config, Fire, Gesture, Hint, Output, Session, Stroke, Trail, Trigger};
 use mousewand_input::Input;
 
 pub struct Daemon {
@@ -23,6 +22,11 @@ struct Active {
     session: Session,
     /// Whether the window has been focused for this gesture yet.
     focused: bool,
+    /// The gestures the session draws from, for the hint.
+    gestures: Vec<Gesture>,
+    stroke: Stroke,
+    /// What fired last, for the hint.
+    fired: Option<String>,
 }
 
 impl Daemon {
@@ -36,18 +40,26 @@ impl Daemon {
         }
     }
 
-    pub fn on_output(&mut self, output: Output) {
+    pub fn on_output(&mut self, output: Output, trigger: Trigger) {
         match output {
-            Output::Begin => self.begin(),
+            Output::Begin => self.begin(Some(trigger) == self.config.settings.global_trigger),
             Output::Update(stroke) => {
                 log::debug!("stroke {stroke}");
+                if let Some(active) = &mut self.active {
+                    active.stroke = stroke.clone();
+                }
                 self.run(|s| s.stroke(&stroke));
+                self.show_hint(false);
             }
             Output::Motion(dx, dy) => self.run(|s| s.motion(dx, dy)),
             Output::Wheel(wheel) => self.run(|s| s.wheel(wheel)),
             Output::Rocker(button) => self.run(|s| s.rocker(button)),
             Output::End(stroke) => {
+                if let Some(active) = &mut self.active {
+                    active.stroke = stroke.clone();
+                }
                 self.run(|s| s.end(&stroke));
+                self.show_hint(true);
                 let matched = self.active.take().is_some_and(|a| a.session.matched());
                 if !matched && !stroke.is_empty() {
                     log::info!("{stroke}: no gesture");
@@ -73,20 +85,50 @@ impl Daemon {
     }
 
     /// Over the desktop, or when the lookup fails, the window has no id or
-    /// class: it still gets the global gestures.
-    fn begin(&mut self) {
+    /// class: it still gets the shared and global gestures. The global
+    /// trigger gets only the global gestures, and keys go to whichever
+    /// window has focus.
+    fn begin(&mut self, global: bool) {
         let target = self.backend.pointer_target().unwrap_or_else(|e| {
             log::warn!("can't find the window under the cursor: {e:#}");
             Target::default()
         });
         self.overlay(|o| o.begin(target.monitor));
         let window = target.window.unwrap_or_default();
-        log::debug!("gesture over {:?}", window.class);
+        log::debug!(
+            "gesture over {:?}{}",
+            window.class,
+            if global { ", global" } else { "" }
+        );
+        let gestures = match global {
+            true => self.config.global_gestures(),
+            false => self.config.gestures_for(&window.class),
+        };
         self.active = Some(Active {
-            session: Session::new(self.config.gestures_for(&window.class)),
+            session: Session::new(gestures.clone()),
+            gestures,
             window,
-            focused: false,
+            focused: global,
+            stroke: Stroke::default(),
+            fired: None,
         });
+        self.show_hint(false);
+    }
+
+    /// Sends the hint for the gesture in progress, if hints are on.
+    fn show_hint(&self, ended: bool) {
+        let (Some(active), Some(overlay)) = (&self.active, &self.overlay) else {
+            return;
+        };
+        if !self.config.hint.enabled {
+            return;
+        }
+        let hint = match (&active.fired, ended) {
+            (Some(label), _) => Hint::fired(&active.stroke, label.clone()),
+            (None, true) => Hint::missed(&active.stroke),
+            (None, false) => Hint::drawing(&active.gestures, &active.stroke, self.config.hint.next),
+        };
+        overlay.hint(hint);
     }
 
     fn overlay(&self, f: impl FnOnce(&dyn Trail)) {
@@ -99,7 +141,12 @@ impl Daemon {
     fn run(&mut self, step: impl FnOnce(&mut Session) -> Vec<Fire>) {
         let Some(active) = &mut self.active else { return };
         let was_locked = active.session.locked();
+        let mut fired = false;
         for fire in step(&mut active.session) {
+            if let Fire::Run(action) = &fire {
+                fired = true;
+                active.fired = active.gestures.iter().find(|g| &g.action == action).map(Gesture::label);
+            }
             if was_locked
                 && matches!(fire, Fire::Run(_))
                 && let Some(overlay) = &self.overlay
@@ -117,6 +164,9 @@ impl Daemon {
             if let Err(e) = result {
                 log::error!("{e:#}");
             }
+        }
+        if fired {
+            self.show_hint(false);
         }
     }
 }

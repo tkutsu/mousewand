@@ -3,6 +3,7 @@
 //! can't block fullscreen direct scanout or eat clicks if mousewand crashes.
 
 mod gpu;
+mod hint;
 mod scene;
 mod trail;
 mod x11;
@@ -33,8 +34,9 @@ use smithay_client_toolkit::shell::wlr_layer::{
 };
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 
-use gpu::{Gpu, Target};
-use mousewand_core::Theme;
+use gpu::{Gpu, Quad, Target};
+use hint::{Image, Painter};
+use mousewand_core::{Hint, HintStyle, Theme};
 use scene::Scene;
 
 /// The layer namespace, for compositors' layer rules.
@@ -45,6 +47,8 @@ enum Command {
     Tick,
     End { matched: bool },
     Theme(Theme),
+    HintStyle(HintStyle),
+    Hint(Hint),
 }
 
 /// Controls the overlay thread.
@@ -99,6 +103,14 @@ impl mousewand_core::Trail for Overlay {
         let _ = self.tx.send(Command::Theme(theme));
     }
 
+    fn set_hint_style(&self, style: HintStyle) {
+        let _ = self.tx.send(Command::HintStyle(style));
+    }
+
+    fn hint(&self, hint: Hint) {
+        let _ = self.tx.send(Command::Hint(hint));
+    }
+
     /// Stops the overlay thread and frees the GPU before the process exits;
     /// tearing down a live Vulkan device at exit can crash the driver.
     fn shutdown(self: Box<Self>) {
@@ -119,6 +131,8 @@ struct State {
     pointer: Option<(wl_pointer::WlPointer, Option<WpCursorShapeDeviceV1>)>,
     gpu: Gpu,
     theme: Theme,
+    hint_style: HintStyle,
+    painter: Painter,
     active: Option<Active>,
 }
 
@@ -131,6 +145,9 @@ struct Active {
     size: Option<(u32, u32)>,
     scale: i32,
     scene: Scene,
+    hint: Option<Hint>,
+    /// `hint`, painted at `scale`.
+    hint_image: Option<Image>,
 }
 
 impl State {
@@ -161,6 +178,8 @@ impl State {
             pointer: None,
             gpu: Gpu::new()?,
             theme: Theme::default(),
+            hint_style: HintStyle::default(),
+            painter: Painter::default(),
             active: None,
             conn,
             qh,
@@ -178,6 +197,13 @@ impl State {
                 }
             }
             Command::Theme(theme) => self.theme = theme,
+            Command::HintStyle(style) => self.hint_style = style,
+            Command::Hint(hint) => {
+                if let Some(active) = &mut self.active {
+                    active.hint = Some(hint);
+                    self.paint_hint();
+                }
+            }
             Command::Tick => {
                 if let Some(active) = &mut self.active {
                     active.scene.tick();
@@ -217,8 +243,22 @@ impl State {
             size: None,
             scale: 1,
             scene: Scene::new(),
+            hint: None,
+            hint_image: None,
         });
         Ok(())
+    }
+
+    /// Paints the hint at the surface's scale.
+    fn paint_hint(&mut self) {
+        let Some(active) = &mut self.active else { return };
+        active.hint_image = match (&active.hint, self.hint_style.enabled) {
+            (Some(hint), true) => {
+                self.painter
+                    .paint(hint, &self.hint_style, self.theme.rejected, active.scale.max(1) as f32)
+            }
+            _ => None,
+        };
     }
 
     fn configure_surface(&mut self) {
@@ -246,10 +286,25 @@ impl State {
             self.active = None;
             return;
         };
+        let scale = active.scale.max(1) as u32;
+        let hint = active.hint_image.as_ref().map(|image| {
+            let (x, y) = hint::place(
+                &self.hint_style,
+                (image.width, image.height),
+                (w * scale, h * scale),
+                scale as f32,
+            );
+            Quad {
+                image,
+                x,
+                y,
+                alpha: self.hint_style.opacity * active.scene.fade(&self.theme).max(0.0),
+            }
+        });
         let surface = active.layer.wl_surface();
         // Ask for the next frame before presenting, which commits.
         surface.frame(&self.qh, FrameCallbackData(surface.clone()));
-        if !self.gpu.draw(&active.target, &strips) {
+        if !self.gpu.draw(&active.target, &strips, hint) {
             surface.commit();
         }
     }
@@ -269,6 +324,7 @@ impl CompositorHandler for State {
         {
             active.scale = factor;
             self.configure_surface();
+            self.paint_hint();
         }
     }
 

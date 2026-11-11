@@ -125,6 +125,15 @@ function Row({
         </Field>
       )}
 
+      <Field label="Name">
+        <input
+          className="field w-32"
+          value={g.name ?? ""}
+          placeholder="Back"
+          title="What hints show for this gesture"
+          onChange={(e) => onChange({ name: e.target.value || null })}
+        />
+      </Field>
       <Field label="Do">
         <select
           className="field"

@@ -3,38 +3,47 @@ match = ["firefox", "librewolf", "zen"]
 
 [[gesture]]
 stroke = "L"
+name = "Back"
 action = { keys = "alt+Left" }
 
 [[gesture]]
 stroke = "R"
+name = "Forward"
 action = { keys = "alt+Right" }
 
 [[gesture]]
 stroke = "DR"
+name = "Close tab"
 action = { keys = "ctrl+w" }
 
 [[gesture]]
 stroke = "UL"
+name = "Reopen closed tab"
 action = { keys = "ctrl+shift+t" }
 
 [[gesture]]
 stroke = "U"
+name = "New tab"
 action = { keys = "ctrl+t" }
 
 [[gesture]]
 stroke = "D"
+name = "Reload"
 action = { keys = "F5" }
 
 # Trigger + wheel scrubs through tabs, overriding the global volume gestures.
 [[gesture]]
 wheel = "up"
+name = "Previous tab"
 action = { keys = "ctrl+shift+Tab" }
 
 [[gesture]]
 wheel = "down"
+name = "Next tab"
 action = { keys = "ctrl+Tab" }
 
 # Rocker: hold the trigger and click right to reopen the last closed tab.
 [[gesture]]
 rocker = "right"
+name = "Reopen closed tab"
 action = { keys = "ctrl+shift+t" }

@@ -10,7 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
-use mousewand_core::Theme;
+use mousewand_core::{Hint, HintStyle, Theme};
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle, XcbDisplayHandle, XcbWindowHandle};
 use x11rb::connection::Connection;
 use x11rb::protocol::shape::{self, ConnectionExt as _};
@@ -19,7 +19,8 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::xcb_ffi::XCBConnection;
 
-use crate::gpu::{Gpu, Target};
+use crate::gpu::{Gpu, Quad, Target};
+use crate::hint::{self, Image, Painter};
 use crate::scene::Scene;
 
 /// About 60 frames a second.
@@ -30,6 +31,8 @@ enum Command {
     Tick,
     End { matched: bool },
     Theme(Theme),
+    HintStyle(HintStyle),
+    Hint(Hint),
 }
 
 pub struct X11Overlay {
@@ -75,6 +78,14 @@ impl mousewand_core::Trail for X11Overlay {
         let _ = self.tx.send(Command::Theme(theme));
     }
 
+    fn set_hint_style(&self, style: HintStyle) {
+        let _ = self.tx.send(Command::HintStyle(style));
+    }
+
+    fn hint(&self, hint: Hint) {
+        let _ = self.tx.send(Command::Hint(hint));
+    }
+
     fn shutdown(self: Box<Self>) {
         drop(self.tx);
         let _ = self.thread.join();
@@ -91,6 +102,10 @@ struct Window {
     size: (u16, u16),
     theme: Theme,
     scene: Option<Scene>,
+    hint_style: HintStyle,
+    painter: Painter,
+    /// The current gesture's hint.
+    hint: Option<Image>,
     last_frame: Instant,
 }
 
@@ -168,6 +183,9 @@ impl Window {
             size,
             theme: Theme::default(),
             scene: None,
+            hint_style: HintStyle::default(),
+            painter: Painter::default(),
+            hint: None,
             last_frame: Instant::now(),
         })
     }
@@ -214,6 +232,7 @@ impl Window {
         match command {
             Command::Begin => {
                 self.scene = Some(Scene::new());
+                self.hint = None;
                 self.conn.map_window(self.window)?;
                 self.conn.flush()?;
             }
@@ -228,6 +247,12 @@ impl Window {
                 }
             }
             Command::Theme(theme) => self.theme = theme,
+            Command::HintStyle(style) => self.hint_style = style,
+            Command::Hint(hint) => {
+                if self.scene.is_some() && self.hint_style.enabled {
+                    self.hint = self.painter.paint(&hint, &self.hint_style, self.theme.rejected, 1.0);
+                }
+            }
         }
         Ok(())
     }
@@ -238,9 +263,24 @@ impl Window {
         scene.push(pointer.root_x.into(), pointer.root_y.into());
         let size = (self.size.0.into(), self.size.1.into());
         let target = &self.target;
+        let fade = scene.fade(&self.theme).max(0.0);
         match scene.strips(size, &self.theme, |c| target.color(c)) {
             Some(strips) => {
-                self.gpu.draw(&self.target, &strips);
+                let hint = self.hint.as_ref().map(|image| {
+                    let (x, y) = hint::place(
+                        &self.hint_style,
+                        (image.width, image.height),
+                        (self.size.0.into(), self.size.1.into()),
+                        1.0,
+                    );
+                    Quad {
+                        image,
+                        x,
+                        y,
+                        alpha: self.hint_style.opacity * fade,
+                    }
+                });
+                self.gpu.draw(&self.target, &strips, hint);
                 Ok(())
             }
             None => {
@@ -253,7 +293,7 @@ impl Window {
     /// Clears the last frame, so the next gesture doesn't flash it, and
     /// unmaps the window.
     fn hide(&mut self) -> anyhow::Result<()> {
-        self.gpu.draw(&self.target, &[]);
+        self.gpu.draw(&self.target, &[], None);
         self.conn.unmap_window(self.window)?;
         self.conn.flush()?;
         Ok(())

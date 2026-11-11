@@ -8,7 +8,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, bail};
-use mousewand_core::{Theme, Trail};
+use mousewand_core::hint::{self, Hint};
+use mousewand_core::{Align, HintStyle, Theme, Trail};
 use serde::Deserialize;
 use zbus::blocking::Connection;
 
@@ -21,7 +22,7 @@ const UUID: &str = "mousewand@tkutsu.github.io";
 /// The extension, built in so mousewand can install it wherever it was installed
 /// from. Bump `version` in its metadata with every change, so users hear
 /// about the update.
-const FILES: [(&str, &str); 3] = [
+const FILES: [(&str, &str); 4] = [
     (
         "metadata.json",
         include_str!("../../../dist/gnome-extension/mousewand@tkutsu.github.io/metadata.json"),
@@ -33,6 +34,10 @@ const FILES: [(&str, &str); 3] = [
     (
         "trail.js",
         include_str!("../../../dist/gnome-extension/mousewand@tkutsu.github.io/trail.js"),
+    ),
+    (
+        "hint.js",
+        include_str!("../../../dist/gnome-extension/mousewand@tkutsu.github.io/hint.js"),
     ),
 ];
 
@@ -259,6 +264,49 @@ impl Trail for GnomeTrail {
 
     fn end(&self, matched: bool) {
         self.send("End", &(matched,));
+    }
+
+    fn set_hint_style(&self, style: HintStyle) {
+        let align = |a: Align| match a {
+            Align::Start => "start",
+            Align::Center => "center",
+            Align::End => "end",
+        };
+        let json = serde_json::json!({
+            "enabled": style.enabled,
+            "vertical": align(style.position.vertical),
+            "horizontal": align(style.position.horizontal),
+            "margin": style.margin,
+            "font": style.font,
+            "size": style.size,
+            "text": style.text.0,
+            "glyph": style.glyph.0,
+            "background": style.background.0,
+            "opacity": style.opacity,
+            "padding": style.padding,
+            "radius": style.radius,
+        });
+        self.send("SetHintStyle", &(json.to_string(),));
+    }
+
+    fn hint(&self, hint: Hint) {
+        let state = match hint.state {
+            hint::State::Drawing => "drawing",
+            hint::State::Fired => "fired",
+            hint::State::Missed => "missed",
+        };
+        let next: Vec<(String, String)> = hint
+            .next
+            .iter()
+            .map(|(rest, label)| (rest.to_string(), label.clone()))
+            .collect();
+        let json = serde_json::json!({
+            "stroke": hint.stroke.to_string(),
+            "label": hint.label,
+            "state": state,
+            "next": next,
+        });
+        self.send("Hint", &(json.to_string(),));
     }
 
     fn set_theme(&self, theme: Theme) {

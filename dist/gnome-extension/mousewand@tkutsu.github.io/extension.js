@@ -29,6 +29,12 @@ const INTERFACE = `
     <method name="SetTheme">
       <arg type="s" direction="in" name="json"/>
     </method>
+    <method name="SetHintStyle">
+      <arg type="s" direction="in" name="json"/>
+    </method>
+    <method name="Hint">
+      <arg type="s" direction="in" name="json"/>
+    </method>
   </interface>
 </node>`;
 
@@ -93,5 +99,13 @@ export default class MousewandExtension extends Extension {
 
     SetTheme(json) {
         this._trail.setTheme(JSON.parse(json));
+    }
+
+    SetHintStyle(json) {
+        this._trail.hint.setStyle(JSON.parse(json));
+    }
+
+    Hint(json) {
+        this._trail.showHint(JSON.parse(json));
     }
 }

@@ -26,6 +26,9 @@ pub struct Gesture {
     /// "keys", "command" or "dispatch".
     pub action: String,
     pub target: String,
+    /// What hints call it.
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -255,6 +258,7 @@ fn gesture_of(table: &toml::Table) -> Result<Gesture, String> {
         hold: text("hold"),
         action: action.0.clone(),
         target: action.1.as_str().unwrap_or_default().into(),
+        name: text("name"),
     })
 }
 
@@ -293,6 +297,9 @@ fn set_gestures(doc: &mut DocumentMut, gestures: &[Gesture]) {
     for g in gestures {
         let mut table = Table::new();
         table[&g.input] = value(&g.value);
+        if let Some(name) = g.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+            table["name"] = value(name);
+        }
         if g.input == "stroke" && g.kind != "oneshot" {
             table["kind"] = value(&g.kind);
             if let Some(step) = g.step {
@@ -357,6 +364,7 @@ mod tests {
             hold: None,
             action: "keys".into(),
             target: combo.into(),
+            name: None,
         }
     }
 
@@ -380,7 +388,8 @@ mod tests {
         let (dir, path) = dir("round-trip");
         std::fs::write(
             path.join("config.toml"),
-            "# my settings\ntrigger = \"side\"\n\n[[gesture]]\nstroke = \"L\"\naction = { keys = \"a\" }\n",
+            "# my settings\ntrigger = \"side\"\n\n[[gesture]]\nstroke = \"L\"\naction = { keys = \"a\" }\n\n\
+             [hint]\nenabled = true\n\n[[global.gesture]]\nstroke = \"9\"\naction = { keys = \"super+Tab\" }\n",
         )
         .unwrap();
         std::fs::write(
@@ -399,6 +408,7 @@ mod tests {
         app.gestures.push(Gesture {
             kind: "repeat".into(),
             step: Some(50.0),
+            name: Some("Next tab".into()),
             ..keys("U", "ctrl+Tab")
         });
         dir.save(&state.settings, &[keys("R", "b")], Some(&app)).unwrap();
@@ -407,9 +417,14 @@ mod tests {
         assert!(main.starts_with("# my settings"), "{main}");
         let browser = std::fs::read_to_string(path.join("apps/browser.toml")).unwrap();
         assert!(browser.starts_with("# browsers"), "{browser}");
+        assert!(browser.contains("name = \"Next tab\""), "{browser}");
+        // Sections the app doesn't edit stay as they were.
+        assert!(main.contains("[hint]") && main.contains("[[global.gesture]]"), "{main}");
         let again = dir.load(Some("firefox")).unwrap();
         assert_eq!(again.global, [keys("R", "b")]);
-        assert_eq!(again.app.unwrap().gestures.len(), 2);
+        let gestures = again.app.unwrap().gestures;
+        assert_eq!(gestures.len(), 2);
+        assert_eq!(gestures[1].name.as_deref(), Some("Next tab"));
     }
 
     #[test]

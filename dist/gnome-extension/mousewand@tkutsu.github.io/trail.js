@@ -12,6 +12,8 @@ import GLib from 'gi://GLib';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
+import {Hint} from './hint.js';
+
 const DEFAULT_THEME = {
     color: [0.45, 0.75, 1.0],
     rejected: [1.0, 0.35, 0.35],
@@ -30,6 +32,12 @@ export class Trail {
     constructor() {
         this._theme = DEFAULT_THEME;
         this._area = null;
+        this.hint = new Hint();
+    }
+
+    showHint(hint) {
+        if (this._area)
+            this.hint.show(hint, this._theme.rejected);
     }
 
     setTheme(theme) {
@@ -66,6 +74,7 @@ export class Trail {
     }
 
     destroy() {
+        this.hint.destroy();
         this._timeline?.stop();
         this._timeline = null;
         this._area?.destroy();
@@ -87,6 +96,7 @@ export class Trail {
             this.destroy();
             return;
         }
+        this.hint.fade(this._fade);
 
         const spots = [...this._points, ...this._pulses];
         if (spots.length === 0) {
