@@ -23,6 +23,22 @@ export type Settings = {
   theme: string;
   /** What opens this app. */
   openSettings: Drawn;
+  hint: Hint;
+};
+
+/** The `[hint]` the form edits. Colors are "#rrggbb" or "#rrggbbaa". */
+export type Hint = {
+  enabled: boolean;
+  /** List what the stroke could still become. */
+  next: boolean;
+  /** Like "bottom center", or "center". */
+  position: string;
+  font: string;
+  size: number;
+  text: string;
+  glyph: string;
+  background: string;
+  radius: number;
 };
 
 export type App = {

@@ -90,7 +90,7 @@ The input is one of these:
 - `stroke = "DR"`: directions in the order you draw them. `U`, `D`, `L` and `R`, and diagonals as numpad digits: `7` up-left, `9` up-right, `1` down-left, `3` down-right.
 - `shape = "circle"`: a drawn shape. See [Shapes](#shapes).
 - `wheel = "up"`: a wheel notch while you hold the trigger, `up`, `down`, `left` or `right`. It fires on every notch.
-- `click = "right"`: a `left` or `right` click while you hold the trigger.
+- `click = "right"`: a `left` or `right` click while you hold the trigger. With `right` as the trigger, only `left`.
 
 The action is one of these:
 
@@ -145,7 +145,7 @@ On their own button, `keys` go to the focused window rather than the one under t
 These are the defaults:
 
 ```toml
-trigger = "middle"   # middle, back (mouse 4), forward (mouse 5), mouse6 to mouse8
+trigger = "middle"   # middle, right, back (mouse 4), forward (mouse 5), mouse6 to mouse8
 threshold = 8        # pixels to move before a press becomes a gesture
 hold_ms = 300        # holding still this long makes it a normal press
 min_segment = 30     # shorter strokes are ignored as noise
@@ -156,7 +156,7 @@ open_settings = { shape = "circle" }   # or a stroke, like { stroke = "U39D" }
 
 ### Hints
 
-Hints show the stroke so far as arrows, what it could still become, and the name of the gesture that fired. They fade out with the trail.
+Hints show the stroke so far as arrows, what it could still become, and the name of the gesture that fired. They fade out with the trail. They're off until you turn them on, under General in the settings app, which also picks a style and shows an example.
 
 ```toml
 [hint]
@@ -267,7 +267,7 @@ The compositor now sees one virtual mouse, "mousewand virtual mouse". Apply per-
 
 ### No hints
 
-Check `enabled = true` under `[hint]`. If hints show arrows but no text, the `font` isn't installed. `fc-match "Font Name"` shows what it resolves to.
+Hints are off by default. Turn them on under General in the settings app, or set `enabled = true` under `[hint]`. If hints show arrows but no text, the `font` isn't installed. `fc-match "Font Name"` shows what it resolves to.
 
 ### "already a [global] gesture"
 

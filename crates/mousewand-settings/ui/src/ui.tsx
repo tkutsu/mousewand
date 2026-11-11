@@ -69,6 +69,26 @@ export function Segmented<T extends string>({
   );
 }
 
+/** A macOS on/off switch. */
+export function Switch({ on, onChange, label }: { on: boolean; onChange: (on: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors ${on ? "bg-accent" : "bg-ink/15"}`}
+      onClick={() => onChange(!on)}
+    >
+      <span
+        className={`absolute top-[2px] left-[2px] size-[18px] rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.3)] transition-transform ${
+          on ? "translate-x-4" : ""
+        }`}
+      />
+    </button>
+  );
+}
+
 /** A problem with a field, in red under it. */
 export function Problem({ children }: { children: ReactNode }) {
   return (
