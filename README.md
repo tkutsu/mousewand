@@ -1,24 +1,14 @@
-<p align="center"><img src="docs/logo.svg" width="96" alt=""></p>
+# mousewand
 
-<h1 align="center">mousewand</h1>
+Mouse gestures for Linux. Hold a mouse button, draw a stroke, and the window under the cursor gets the action you set for that stroke in that app.
 
-<p align="center">Mouse gestures for every Linux desktop.<br>Hold a button, draw a stroke, and the window under it does what you meant.</p>
+![Drawing a stroke to the left in Firefox goes back a page, and a stroke to the right goes forward again. Each leaves a short orange trail, and a hint at the bottom names the gesture.](docs/demo.gif)
 
-<p align="center"><img src="docs/demo.gif" width="800" alt="Drawing a stroke to the left in Firefox goes back a page, and a stroke to the right goes forward again. Each leaves a short orange trail, and a hint at the bottom names the gesture and what the stroke could still become."></p>
-
-## Why mousewand
-
-- **Works on nearly every desktop.** Hyprland, KDE Plasma, GNOME, sway, niri, COSMIC, labwc, and X11 desktops like Xfce, Cinnamon, MATE and i3. It finds your compositor on its own.
-- **Different gestures for each app.** The same stroke can go back in Firefox and switch tabs in your terminal. The window under the cursor decides.
-- **Stays out of your way.** A quick middle click is still a middle click, so pasting works. Holding the button still is still a drag or an autoscroll.
-- **You see what you draw.** A smooth, glowing trail follows the stroke, and turns red when nothing matches. Turn on hints to see the stroke so far, what it could still become, and the name of what fired.
-- **More than strokes.** Draw a circle, or any shape you teach it. Spin the wheel or click the other buttons while holding the trigger. Strokes can repeat as you keep moving, for scrubbing through tabs, or hold keys down, for a real alt-tab. Global gestures can live on a button of their own.
-- **Sets itself up.** It installs what your desktop needs, like GNOME's extension, and tells you once about anything left for you to do.
-- **Plain text config, applied on save.** Or draw a circle to open the settings app, and just press the buttons and shortcuts you want.
+It runs on Hyprland, KDE Plasma 6, GNOME, sway, niri, COSMIC, labwc and X11 desktops, and picks the right one on its own. A quick click of the trigger button is still a click, so middle-click paste keeps working, and holding the button still is still a drag.
 
 ## Install
 
-**1. Build it.** You need a recent [Rust](https://rustup.rs) toolchain.
+Build it with a recent [Rust](https://rustup.rs) toolchain:
 
 ```fish
 git clone https://github.com/tkutsu/mousewand
@@ -26,7 +16,7 @@ cd mousewand
 cargo install --path crates/mousewand
 ```
 
-**2. Let it read your mouse.** mousewand reads mice directly and sends everything on through a virtual mouse. This udev rule allows that for the logged-in user, without root:
+mousewand reads your mice directly and passes their events on through a virtual mouse. This udev rule lets the logged-in user do that without root:
 
 ```fish
 sudo cp dist/70-mousewand.rules /etc/udev/rules.d/
@@ -36,9 +26,9 @@ sudo modprobe uinput; and sudo udevadm control --reload; and sudo udevadm trigge
 
 Log out and back in once. Being in the `input` group works too.
 
-**3. Try it.** Run `mousewand` in a terminal, hold the middle button and draw. Out of the box, a circle opens the settings app; add your own gestures below. Ctrl+C gives the mouse back.
+Run `mousewand`, hold the middle button and draw. Ctrl+C stops it and gives the mouse back.
 
-**4. Start it with your desktop.**
+To start it with your desktop, add `mousewand` to your compositor's autostart, such as `exec-once` in Hyprland, or use the systemd user service:
 
 ```fish
 mkdir -p ~/.config/systemd/user
@@ -46,55 +36,19 @@ cp dist/mousewand.service ~/.config/systemd/user/
 systemctl --user enable --now mousewand
 ```
 
-The settings app is optional and built separately; see [Settings app](#settings-app).
+Only one mousewand runs at a time, so doing both does no harm.
 
-## Your first gestures
+### Settings app
 
-Copy the examples, then edit them. Saving a file applies it at once.
+The settings app is optional. It's a Tauri app and needs WebKitGTK (`webkit2gtk-4.1`), Node and pnpm to build:
 
 ```fish
-mkdir -p ~/.config/mousewand
-cp -r examples/* ~/.config/mousewand/
+pnpm -C crates/mousewand-settings/ui install
+pnpm -C crates/mousewand-settings/ui build
+cargo install --path crates/mousewand-settings
 ```
 
-They give Firefox back, forward, new tab, close tab and reopen tab, kitty tab switching, volume on the wheel, an alt-tab, and hints. The two workspace gestures in `config.toml` are for Hyprland; remove them elsewhere.
-
-A gesture is a stroke and an action:
-
-```toml
-# ~/.config/mousewand/apps/firefox.toml
-match = ["firefox", "librewolf"]
-
-[[gesture]]
-stroke = "L"                   # draw left…
-name = "Back"                  # …which hints call "Back"…
-action = { keys = "alt+Left" } # …to go back
-```
-
-Strokes are directions in order: `U D L R`, plus diagonals written as numpad digits, `7` ↖ `9` ↗ `1` ↙ `3` ↘. So `"DR"` is down, then right.
-
-## Desktops
-
-| | Gestures act on | Trail | `dispatch` runs |
-|---|---|---|---|
-| Hyprland | the window under the cursor | ✓ | a Hyprland dispatcher |
-| KDE Plasma 6 | the window under the cursor | ✓ | a KWin shortcut by name, e.g. `"Window Maximize"` |
-| GNOME | the window under the cursor | ✓ | nothing; use `keys` or `command` |
-| X11 (Xfce, Cinnamon, MATE, i3, …) | the window under the cursor | ✓ | nothing |
-| sway | the focused window | ✓ | a sway command, e.g. `"fullscreen toggle"` |
-| niri | the focused window | ✓ | a niri action, e.g. `"maximize-column"` |
-| COSMIC, labwc | the focused window | ✓ | nothing |
-
-"The focused window" means the compositor doesn't tell other programs which window is under the cursor. With focus-follows-mouse on, that's the same window; sway has it on by default, and mousewand turns it on in niri.
-
-On start, mousewand sets up what it can:
-
-- **Hyprland**: turns off the layer animation for its trail, so the trail doesn't slide in. The rule lives only in the running Hyprland, and mousewand adds it again after a config reload.
-- **GNOME**: installs and enables its Shell extension, and updates it with mousewand. GNOME starts new extensions only at login, so log out and back in once.
-- **niri**: adds `focus-follows-mouse` to `config.kdl`, once, after `niri validate` accepts it, keeping the old file as `config.kdl.mousewand-backup`.
-- **X11**: starts picom for the trail if no compositing manager is running, and stops it on exit.
-
-Anything it can't do for you, like turning on focus-follows-mouse in labwc or COSMIC, it tells you once: in the settings app, or as a notification. To choose a backend by hand, set `MOUSEWAND_BACKEND` to `hyprland`, `sway`, `niri`, `kwin`, `gnome`, `x11` or `toplevel`.
+Draw a circle over a window to open it on that window's app. `mousewand-settings --class firefox` opens it from a terminal. It edits the same files described below, keeps your comments, and won't save a config mousewand would reject. It can also record a shortcut or detect your trigger button as you press them, and teach mousewand new shapes.
 
 ## Configuration
 
@@ -102,43 +56,49 @@ Anything it can't do for you, like turning on focus-follows-mouse in labwc or CO
 ~/.config/mousewand/
   config.toml         settings, gestures for every app, global gestures, hints
   apps/<class>.toml   gestures for one app, by window class
-  themes/<name>.toml  trail looks, picked with theme = "<name>"
-  shapes/<name>.toml  shapes you drew in the settings app
+  shapes/<name>.toml  shapes drawn in the settings app
+  themes/<name>.toml  trail themes
 ```
 
-An app's gestures replace the ones in `config.toml` with the same input. Saving a broken file shows a notification with the error, and the last good config stays in use.
+Changes apply when you save. If a file has an error, mousewand keeps the last working config and shows the error in a notification.
 
-### Settings
+The examples set up Firefox, kitty, volume on the wheel, an alt-tab and hints. Their two workspace gestures use Hyprland dispatchers.
+
+```fish
+mkdir -p ~/.config/mousewand
+cp -r examples/* ~/.config/mousewand/
+```
+
+### Gestures
+
+A gesture is an input and an action, with an optional name for hints to show:
 
 ```toml
-trigger = "middle"   # middle, back (mouse 4) or forward (mouse 5); the settings app can detect it
-threshold = 8        # movement, in px, before a press becomes a gesture
-hold_ms = 300        # holding still this long makes it a normal press
-min_segment = 30     # shorter strokes are ignored as noise
-devices = []         # only use mice whose name contains one of these
-theme = "default"    # or a file in themes/, without .toml
-open_settings = { shape = "circle" }   # or a stroke: { stroke = "U39D" }
+# ~/.config/mousewand/apps/firefox.toml
+match = ["firefox", "librewolf"]
+
+[[gesture]]
+stroke = "L"
+name = "Back"
+action = { keys = "alt+Left" }
 ```
 
-### Actions
+Without `match`, an app file applies to the window class in its file name. An app's gestures replace the ones in `config.toml` that have the same input.
 
-- `keys`: a key combo like `"ctrl+shift+t"`, typed into the window you drew on. Keys are physical positions on a US layout, whatever your layout is.
-- `command`: a shell command. It gets `$MOUSEWAND_CLASS` and `$MOUSEWAND_TITLE`, and can use the selected text; see [Recipes](#recipes).
-- `dispatch`: a compositor command, for the desktops in the table above. Hyprland with a Lua config takes `'hl.dsp.focus({ workspace = "e+1" })'`; older versions take `"workspace e+1"`.
+The input is one of these:
 
-### Inputs
+- `stroke = "DR"`: directions in the order you draw them. `U`, `D`, `L` and `R`, and diagonals as numpad digits: `7` up-left, `9` up-right, `1` down-left, `3` down-right.
+- `shape = "circle"`: a drawn shape. See [Shapes](#shapes).
+- `wheel = "up"`: a wheel notch while you hold the trigger, `up`, `down`, `left` or `right`. It fires on every notch.
+- `click = "right"`: a `left` or `right` click while you hold the trigger.
 
-Each gesture has one:
+The action is one of these:
 
-- `stroke = "DR"`: a drawn stroke.
-- `shape = "circle"`: a drawn shape; see [Shapes](#shapes).
-- `wheel = "up"`: a wheel notch (`up`, `down`, `left`, `right`) while holding the trigger. Fires on every notch.
-- `click = "right"`: a `left` or `right` click while holding the trigger.
+- `keys = "ctrl+shift+t"`: a key combo for the window you drew over. Keys are positions on a US keyboard, whatever your layout.
+- `command = "..."`: a shell command. It gets `$MOUSEWAND_CLASS` and `$MOUSEWAND_TITLE`.
+- `dispatch = "..."`: a compositor command. See [Desktops](#desktops) for what each one takes.
 
-A stroke can keep firing while you hold the trigger:
-
-- `repeat = true` fires when the stroke is recognized, then again every `step` px (80 by default) you keep moving its way, and on every wheel notch. Good for scrubbing through tabs.
-- `hold` in the action does the same, with those keys held down until you let go. This is a real alt-tab:
+A stroke can keep firing while you hold the trigger. With `repeat = true` it fires when it's recognized, again for every `step` pixels (80 by default) you keep moving in its last direction, and on every wheel notch, which suits scrubbing through tabs. With `hold` in the action it does the same and holds those keys down until you let go, which makes a real alt-tab:
 
 ```toml
 [[gesture]]
@@ -147,15 +107,13 @@ name = "Switch windows"
 action = { keys = "Tab", hold = "alt" }
 ```
 
-A repeating stroke fires as soon as it's recognized, so no other stroke may start with it; mousewand rejects such a config with an error.
-
-Any gesture can have a `name`, which hints show. Without one, they show its keys or command.
+A repeating stroke takes over as soon as it's drawn, so no other stroke may start with it. mousewand rejects a config where one does.
 
 ### Shapes
 
-A shape matches by how the drawing looks, not by its directions. A circle counts whether it's round or squashed, tilted, drawn either way round, or not quite closed.
+A shape matches by how the drawing looks rather than its directions. A circle counts when it's squashed, tilted, drawn either way round, or not quite closed.
 
-`circle` is built in, and opens the settings app unless you give it a gesture of your own or pick another one with `open_settings`. To add other shapes, draw them five times in the settings app, which turns away a drawing that doesn't look like the others and saves the shape as `shapes/<name>.toml`. Its General page lists every shape, to redraw or remove.
+`circle` is built in. To add a shape, draw it five times in the settings app. It saves the shape as `shapes/<name>.toml` and lists every shape under General, where you can redraw or remove them.
 
 ```toml
 [[gesture]]
@@ -164,11 +122,11 @@ name = "Reopen tab"
 action = { keys = "ctrl+shift+t" }
 ```
 
-Shapes fire on release, and can't repeat or hold keys. A stroke that has a gesture beats a shape, so a square drawn as `LDRU` is a square if `LDRU` is set up; otherwise it's round enough to count as a circle.
+Shapes fire on release and can't repeat or hold keys. A stroke with a gesture of its own takes precedence over a shape, so a square drawn as `LDRU` stays a square if `LDRU` has a gesture. Otherwise it's round enough to count as a circle.
 
 ### Global gestures
 
-Gestures under `[global]` are the same in every app, and no app file can replace them; a config that tries is rejected. Give them a `trigger` of their own, and that button runs them and nothing else, while the main trigger keeps the app gestures:
+Gestures under `[global]` are the same in every app, and app files can't replace them. With a `trigger` of their own, that button runs only them, and the main trigger keeps the app gestures:
 
 ```toml
 [global]
@@ -180,31 +138,57 @@ name = "Next workspace"
 action = { dispatch = 'hl.dsp.focus({ workspace = "e+1" })' }
 ```
 
-On their own button, `keys` go to whichever window has focus, not the one under the cursor.
+On their own button, `keys` go to the focused window rather than the one under the cursor.
+
+### Settings
+
+These are the defaults:
+
+```toml
+trigger = "middle"   # middle, back (mouse 4), forward (mouse 5), mouse6 to mouse8
+threshold = 8        # pixels to move before a press becomes a gesture
+hold_ms = 300        # holding still this long makes it a normal press
+min_segment = 30     # shorter strokes are ignored as noise
+devices = []         # only use mice whose name contains one of these
+theme = "default"    # or a file in themes/, without .toml
+open_settings = { shape = "circle" }   # or a stroke, like { stroke = "U39D" }
+```
 
 ### Hints
 
-A small panel that shows the stroke so far as arrows, with the gesture it matches, a list of what it could still become, and the name of what fired. It fades out with the trail.
+Hints show the stroke so far as arrows, what it could still become, and the name of the gesture that fired. They fade out with the trail.
 
 ```toml
 [hint]
 enabled = true
 next = true                  # list what the stroke could still become
 position = "bottom center"   # top, center or bottom, with left, center or right
-margin = 64                  # from the screen edge, px
-font = "sans-serif"          # any installed font family, e.g. "Inter"
-size = 17                    # text size, px; arrows match it
+margin = 64                  # pixels from the screen edge
+font = "sans-serif"          # any installed font family
+size = 17                    # text size in pixels
 text = "#f2f2f7"
 glyph = "#9ec4ff"            # the arrows
 background = "#1c1e26"       # "#rrggbbaa" for a see-through background
-opacity = 0.9                # of the whole hint
+opacity = 0.9
 padding = 14
 radius = 14
 ```
 
-### Recipes
+### Themes
 
-Commands can use the text you selected: `wl-paste --primary` prints it on Wayland, `xclip -o` on X11.
+```toml
+# ~/.config/mousewand/themes/ember.toml
+color = "#ff8a3d"     # the trail
+rejected = "#7f8ca3"  # the trail when nothing matched
+width = 34            # pixels at the head, glow included
+life_ms = 650         # how long the tail lingers
+fade_ms = 400         # fade after release
+glow = 0.9            # 0 is a plain line
+```
+
+### Using the selected text
+
+Commands can read the selection: `wl-paste --primary` prints it on Wayland, and `xclip -o` on X11.
 
 ```toml
 [[gesture]]
@@ -218,88 +202,84 @@ name = "Search selection"
 action = { command = 'xdg-open "https://duckduckgo.com/?q=$(wl-paste --primary --no-newline | jq -sRr @uri)"' }
 ```
 
-Start the query with a bang, like `?q=!yt+`, to search a particular site.
+## Desktops
 
-### Themes
+| | Gestures go to | `dispatch` runs |
+|---|---|---|
+| Hyprland | the window under the cursor | a dispatcher: `'hl.dsp.focus({ workspace = "e+1" })'` with a Lua config, `"workspace e+1"` before |
+| KDE Plasma 6 | the window under the cursor | a KWin shortcut by name, like `"Window Maximize"` |
+| GNOME | the window under the cursor | nothing |
+| X11 (Xfce, Cinnamon, MATE, i3 and others) | the window under the cursor | nothing |
+| sway | the focused window | a sway command, like `"fullscreen toggle"` |
+| niri | the focused window | a niri action, like `"maximize-column"` |
+| COSMIC, labwc | the focused window | nothing |
 
-```toml
-# ~/.config/mousewand/themes/ember.toml
-color = "#ff8a3d"     # the trail
-rejected = "#7f8ca3"  # the trail when nothing matched
-width = 34            # px at the head, glow included
-life_ms = 650         # how long the tail lingers
-fade_ms = 400         # fade after release
-glow = 0.9            # 0 is a plain line
-```
+sway, niri, COSMIC and labwc don't tell other programs which window is under the cursor, so gestures go to the focused one. With focus-follows-mouse on, that's the same window.
 
-## Settings app
+On start, mousewand sets up what it can:
 
-Draw a circle over any window to open the settings app on that app's gestures. It has pages for General, Every App and the current app, which it opens on. It has presets for common apps, a pad for teaching it new shapes, a Record button that captures a shortcut as you press it, and a Detect button that finds your trigger as you press it. It edits the same files, keeps your comments, checks each gesture as you edit it, and won't save anything mousewand would reject. Only one settings window opens; drawing the circle again brings it to the front.
+- Hyprland: it turns off the layer animation for its trail in the running session, and again after each config reload.
+- GNOME: it installs and enables its Shell extension, which draws the trail. GNOME loads new extensions at login, so log out and back in once.
+- niri: it adds `focus-follows-mouse` to `config.kdl` once, after `niri validate` accepts the change, and keeps the old file as `config.kdl.mousewand-backup`.
+- X11: it starts picom for the trail if no compositing manager is running, and stops it on exit.
 
-Its General page picks what opens it, and gives its own window gestures for Save, Close, New gesture and switching pages. They press the window's shortcuts, which work from the keyboard too: Ctrl+S, Ctrl+W, Ctrl+N, and Ctrl+Tab or Ctrl+Shift+Tab. Over the settings window, the gesture that opens it does nothing.
-
-It's a Tauri app, so it needs WebKitGTK (`webkit2gtk-4.1`), Node and pnpm to build:
-
-```fish
-pnpm -C crates/mousewand-settings/ui install
-pnpm -C crates/mousewand-settings/ui build
-cargo install --path crates/mousewand-settings
-```
-
-`mousewand-settings --class firefox` opens it on an app by hand.
+It tells you once about anything left to do by hand, like focus-follows-mouse in labwc or COSMIC, in the settings app or in a notification. To pick a backend yourself, set `MOUSEWAND_BACKEND` to `hyprland`, `sway`, `niri`, `kwin`, `gnome`, `x11` or `toplevel`.
 
 ## Troubleshooting
 
-Most answers are in the log: `journalctl --user -u mousewand -f`, or stop it and run `mousewand` in a terminal. Only one runs at a time, so a second one says `already running` and quits. For more detail, start it with `RUST_LOG=mousewand=debug`.
+The log is in `journalctl --user -u mousewand -f`, or in the terminal if you run `mousewand` there. `RUST_LOG=mousewand=debug` adds the window class each gesture matched and the stroke it saw.
 
-**Nothing happens at all.** Check that it's running: `systemctl --user status mousewand`. The log should say `grabbed` and your mouse's name. If it doesn't, or it asks whether `/dev/uinput` is writable, step 2 of [Install](#install) hasn't taken effect yet: log out and back in. With several mice, `devices` in `config.toml` may be leaving yours out.
+### Nothing happens
 
-**It doesn't start with my desktop.** The service starts with `graphical-session.target`, which some setups never reach. Start `mousewand` from your compositor's autostart instead, e.g. `exec-once` in Hyprland. Doing both is harmless: whichever starts second quits.
+The log should say `grabbed` and your mouse's name. If it doesn't, or it asks whether `/dev/uinput` is writable, the udev rule hasn't taken effect yet: log out and back in. With several mice, check that `devices` in `config.toml` includes yours.
 
-**A stroke does nothing.** The log shows what mousewand saw, e.g. `DUDU: no gesture`. Draw more slowly or more clearly, or lower `min_segment`. With debug logging, it also shows the window class it matched; that's the name for `apps/`.
+### A stroke does nothing
 
-**The wrong window reacts.** On sway, niri, COSMIC and labwc, gestures go to the focused window. Turn on focus-follows-mouse; see [Desktops](#desktops).
+The log shows what mousewand saw, like `DUDU: no gesture`. Draw more slowly, or lower `min_segment`.
 
-**No trail.** On GNOME, log out and back in once after the first start. On X11, mousewand needs picom or another compositing manager. Anywhere else, look for `no trail:` in the log; the trail needs a working GPU driver.
+### The wrong window reacts
 
-**Gestures start when I meant to click or drag.** A click stays a click unless you draw a stroke, even if the mouse was moving, and holding still for `hold_ms` makes it a normal press, for middle-drag and autoscroll. If quick flicks still turn into strokes, raise `min_segment`.
+On sway, niri, COSMIC and labwc, gestures go to the focused window. Turn on focus-follows-mouse.
 
-**A circle does something else.** A stroke with a gesture wins over a shape, and a repeating stroke takes over as soon as it's drawn, so a circle that starts with one never finishes. Start mousewand with `RUST_LOG=mousewand=debug` to see the stroke your circle made, and change that gesture.
+### No trail
 
-**Rings pulse around the cursor as I draw.** A repeating gesture took over, and each ring is one more repeat. It takes over as soon as its stroke is drawn, so a one-direction one, like the example's `9` (↗) alt-tab, catches every stroke that starts that way. Give it a longer stroke, or remove it if your desktop doesn't use alt+Tab.
+On GNOME, log out and back in once after the first start. On X11, mousewand needs picom or another compositing manager. Anywhere else, look for `no trail:` in the log. The trail needs a working GPU driver.
 
-**My mouse settings stopped applying.** Your compositor now sees one virtual mouse, "mousewand virtual mouse". Apply per-device settings, like a custom acceleration profile, to it instead.
+### Gestures start when I meant to click or drag
 
-**"there's no `kind` here", or `hold` or `rocker`.** The gesture format changed: `kind = "repeat"` is now `repeat = true`, `hold` goes in the action (`action = { keys = "Tab", hold = "alt" }`), and `rocker` is now `click`.
+A click stays a click unless you draw a stroke, and holding still for `hold_ms` makes a normal press, for middle-drag and autoscroll. If quick flicks still turn into strokes, raise `min_segment`.
 
-**Keys come out wrong.** `keys` uses US key positions. On another layout, write the key that sits in the same place on a US keyboard.
+### A circle does something else
 
-**No hints.** Check `enabled = true` under `[hint]` in `config.toml`. If they show arrows but no text, the `font` isn't installed: `fc-match "Your Font"` shows what it resolves to.
+A stroke with a gesture takes precedence over a shape, and a repeating stroke takes over as soon as it's drawn. Debug logging shows which stroke your circle made.
 
-**"already a [global] gesture".** An app file uses the same stroke, wheel or click as a global gesture that shares the main trigger. Change one of them, or give `[global]` a `trigger` of its own.
+### Rings pulse around the cursor
 
-**Drawing a circle shows "command not found".** The settings app isn't installed; see [Settings app](#settings-app).
+A repeating gesture took over, and each ring is one repeat. A one-direction repeating stroke, like the example alt-tab on `9`, catches every stroke that starts in that direction. Give it a longer stroke.
 
-**The mouse is stuck.** Stopping mousewand always gives it back: `systemctl --user stop mousewand`, or `pkill mousewand` from a keyboard.
+### My mouse settings stopped applying
 
-## How it works
+The compositor now sees one virtual mouse, "mousewand virtual mouse". Apply per-device settings, like an acceleration profile, to it.
 
-mousewand grabs your mice through evdev and passes everything on through one virtual uinput device, except the trigger button. It holds that back until it knows whether the press is a click, a hold or a gesture. The trail is a layer-shell surface drawn with wgpu, and it exists only while you draw, so it can't get in the way of fullscreen games or video.
+### Keys come out wrong
 
-| Crate | Does |
-|---|---|
-| `mousewand-core` | Config, stroke recognition, the trigger state machine and gesture sessions. Pure and unit-tested. |
-| `mousewand-input` | evdev grab, uinput forwarding, click replay, key injection. |
-| `mousewand-backend` | The window under the cursor, focus and dispatch, per compositor. |
-| `mousewand-overlay` | The trail. |
-| `mousewand` | The daemon. |
-| `mousewand-settings` | The settings app. |
+`keys` uses US key positions. On another layout, write the key in the same place on a US keyboard.
 
-## Development
+### No hints
 
-`cargo test` runs the unit tests. `cargo run -p mousewand-input --example probe` tests the input path against a fake mouse without touching your desktop.
+Check `enabled = true` under `[hint]`. If hints show arrows but no text, the `font` isn't installed. `fc-match "Font Name"` shows what it resolves to.
 
-`tools/vm/vm.sh` tests every compositor end to end in a QEMU VM: a fake mouse inside the guest, mousewand's grab, and the compositor on top. Run `vm.sh setup` and `vm.sh start`, then `vm.sh test sway` (or `kwin`, `gnome`, `niri`, `labwc`, `cosmic`, `x11`).
+### "already a [global] gesture"
+
+An app file uses the same input as a global gesture that shares the main trigger. Change one of them, or give `[global]` its own `trigger`.
+
+### "there's no `kind` here", or `hold` or `rocker`
+
+The gesture format changed. `kind = "repeat"` is now `repeat = true`, `hold` goes in the action, and `rocker` is now `click`.
+
+### The mouse is stuck
+
+Stopping mousewand gives it back: `systemctl --user stop mousewand`, or `pkill mousewand`.
 
 ## License
 
