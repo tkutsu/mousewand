@@ -1,15 +1,18 @@
 //! What wisp needs from the compositor, behind one trait so each compositor
 //! gets its own implementation.
 
+mod cosmic;
 mod gnome;
 mod hyprland;
 mod kwin;
 mod sway;
+mod toplevel;
 
 pub use gnome::Gnome;
 pub use hyprland::Hyprland;
 pub use kwin::KWin;
 pub use sway::Sway;
+pub use toplevel::{Flavor, Toplevels};
 
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct Window {
@@ -53,7 +56,14 @@ pub fn detect() -> anyhow::Result<Box<dyn Backend>> {
         Some("sway") => return Ok(Box::new(Sway::connect()?)),
         Some("kwin") => return Ok(Box::new(KWin::connect()?)),
         Some("gnome") => return Ok(Box::new(Gnome::connect()?)),
-        Some(other) => anyhow::bail!("unknown WISP_BACKEND {other:?}: use hyprland, sway, kwin or gnome"),
+        Some("niri") => {
+            let socket = niri_socket().ok_or_else(|| anyhow::anyhow!("no niri socket found"))?;
+            return Ok(Box::new(Toplevels::connect(Flavor::Niri(socket))?));
+        }
+        Some("toplevel") => return Ok(Box::new(Toplevels::connect(Flavor::Other)?)),
+        Some(other) => {
+            anyhow::bail!("unknown WISP_BACKEND {other:?}: use hyprland, sway, niri, kwin, gnome or toplevel")
+        }
         None => {}
     }
     if hyprland::find_socket().is_ok_and(|s| answers(&s)) {
@@ -61,6 +71,9 @@ pub fn detect() -> anyhow::Result<Box<dyn Backend>> {
     }
     if sway::find_socket().is_some_and(|s| answers(&s)) {
         return Ok(Box::new(Sway::connect()?));
+    }
+    if let Some(socket) = niri_socket().filter(|s| answers(s)) {
+        return Ok(Box::new(Toplevels::connect(Flavor::Niri(socket))?));
     }
     if let Ok(bus) = zbus::blocking::Connection::session() {
         if has_owner(&bus, "org.kde.KWin") {
@@ -71,7 +84,34 @@ pub fn detect() -> anyhow::Result<Box<dyn Backend>> {
             return Ok(Box::new(Gnome::connect()?));
         }
     }
-    anyhow::bail!("no supported compositor found (Hyprland, sway, KWin or GNOME)")
+    // labwc, river, COSMIC and other compositors that list their windows.
+    Toplevels::connect(Flavor::Other)
+        .map(|t| Box::new(t) as Box<dyn Backend>)
+        .map_err(|e| {
+            e.context("no supported compositor found (Hyprland, sway, niri, KWin, GNOME, or one with foreign-toplevel)")
+        })
+}
+
+/// `$NIRI_SOCKET`, else the newest `niri.*.sock` in the runtime directory.
+fn niri_socket() -> Option<std::path::PathBuf> {
+    if let Some(socket) = std::env::var_os("NIRI_SOCKET").map(std::path::PathBuf::from) {
+        return Some(socket);
+    }
+    newest_in_runtime_dir(|name| name.starts_with("niri.") && name.ends_with(".sock"))
+}
+
+/// The most recently modified file in `$XDG_RUNTIME_DIR` whose name matches.
+fn newest_in_runtime_dir(matches: impl Fn(&str) -> bool) -> Option<std::path::PathBuf> {
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR")?;
+    std::fs::read_dir(runtime)
+        .ok()?
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            matches(path.file_name()?.to_str()?).then_some(())?;
+            Some((path.metadata().ok()?.modified().ok()?, path))
+        })
+        .max()
+        .map(|(_, path)| path)
 }
 
 /// A socket file can outlive its compositor.
