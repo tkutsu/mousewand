@@ -5,11 +5,12 @@
 # but run fine as a window inside sway.
 export XDG_RUNTIME_DIR=/run/user/1000
 bash ~/switch.sh sway > /dev/null
-S=$(ls /run/user/1000/sway-ipc.*.sock)
+S=$(ls -t /run/user/1000/sway-ipc.*.sock | head -1)
 case "$1" in
+  # wisp turns on focus-follows-mouse itself; start from niri's default.
   niri)
-    # The setup the README recommends: focus follows the mouse.
-    sed -i 's|^    // focus-follows-mouse max-scroll-amount="0%"|    focus-follows-mouse|' ~/.config/niri/config.kdl
+    cp ~/.config/niri/config.kdl.wisp-backup ~/.config/niri/config.kdl 2> /dev/null &&
+      rm ~/.config/niri/config.kdl.wisp-backup
     cmd=niri
     ;;
   cosmic) cmd=cosmic-comp ;;

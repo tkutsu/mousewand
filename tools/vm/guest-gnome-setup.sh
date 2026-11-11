@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# Usage: gnome-setup.sh restart|window APP_ID
+# Usage: gnome-setup.sh restart|install|window APP_ID
 export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0
 case "$1" in
+# wisp installs and enables its extension; GNOME loads it at the next login.
+install)
+  for _ in $(seq 30); do busctl --user status org.gnome.Shell > /dev/null 2>&1 && break; sleep 1; done
+  (WISP_CONFIG_DIR=~/cfg timeout 4 ~/bin/wisp > ~/install.log 2>&1)
+  grep -E "installed|notes" ~/install.log | cut -c25-
+  gsettings get org.gnome.shell enabled-extensions
+  ;;
 restart)
-  ext=~/.local/share/gnome-shell/extensions/wisp@tkutsu.github.io
-  mkdir -p "$ext"
-  cp ~/ext/* "$ext"/
   gsettings set org.gnome.shell disable-user-extensions false
-  gsettings set org.gnome.shell enabled-extensions "['wisp@tkutsu.github.io']"
   echo gnome > ~/compositor
   pkill -x kwin_wayland
   pkill -x sway

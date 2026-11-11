@@ -3,5 +3,6 @@
   "name": "wisp",
   "description": "Tells the wisp mouse-gesture daemon which window is under the cursor, and focuses it.",
   "shell-version": ["45", "46", "47", "48", "49", "50", "51"],
-  "url": "https://github.com/tkutsu/wisp"
+  "url": "https://github.com/tkutsu/wisp",
+  "version": 1
 }

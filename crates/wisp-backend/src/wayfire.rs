@@ -100,6 +100,18 @@ fn topmost<'a>(views: &'a [View], outputs: &[Output], p: (f64, f64)) -> Option<&
 }
 
 impl Backend for Wayfire {
+    /// The `ipc` plugin answers on the socket; window lookup also needs
+    /// `ipc-rules`.
+    fn setup(&mut self) -> Vec<String> {
+        match self.call("window-rules/get_cursor_position", json!({})) {
+            Ok(_) => Vec::new(),
+            Err(e) => vec![format!(
+                "wisp can't ask Wayfire which window is under the cursor ({e:#}). Add `ipc-rules` to the \
+                 `plugins` line of `wayfire.ini`."
+            )],
+        }
+    }
+
     fn pointer_target(&self) -> anyhow::Result<Target> {
         let pos = self.call("window-rules/get_cursor_position", json!({}))?;
         let p = (

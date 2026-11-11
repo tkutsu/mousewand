@@ -41,6 +41,11 @@ export type State = {
 
 export const load = () => invoke<State>("load");
 
+/** The daemon's setup notes for this compositor; `open` asks to show them first. */
+export type Notes = { notes: string[]; open: boolean };
+
+export const notes = () => invoke<Notes>("notes");
+
 export const save = (settings: Settings, global: Gesture[], app: App | null) =>
   invoke<void>("save", { settings, global, app });
 
