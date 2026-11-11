@@ -43,6 +43,14 @@ impl Scene {
         self.ended.get_or_insert((Instant::now(), matched));
     }
 
+    /// 1 while drawing, falling to 0 over the fade after release.
+    pub fn fade(&self, theme: &Theme) -> f32 {
+        match self.ended {
+            Some((at, _)) => 1.0 - at.elapsed().as_secs_f32() * 1000.0 / theme.fade_ms.max(1) as f32,
+            None => 1.0,
+        }
+    }
+
     /// The strips to draw now on a surface of `size`, or `None` once the
     /// fade is over. `output` turns a theme color into what the surface
     /// takes (linear on sRGB surfaces).
@@ -52,10 +60,7 @@ impl Scene {
         theme: &Theme,
         output: impl Fn([f32; 3]) -> [f32; 3],
     ) -> Option<Vec<Vec<Vertex>>> {
-        let fade = match self.ended {
-            Some((at, _)) => 1.0 - at.elapsed().as_secs_f32() * 1000.0 / theme.fade_ms.max(1) as f32,
-            None => 1.0,
-        };
+        let fade = self.fade(theme);
         if fade <= 0.0 {
             return None;
         }

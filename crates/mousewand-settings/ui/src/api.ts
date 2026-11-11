@@ -8,6 +8,8 @@ export type Gesture = {
   hold: string | null;
   action: "keys" | "command" | "dispatch";
   target: string;
+  /** What hints call it. */
+  name: string | null;
 };
 
 export type Settings = {
@@ -57,4 +59,5 @@ export const newGesture = (): Gesture => ({
   hold: null,
   action: "keys",
   target: "",
+  name: null,
 });

@@ -7,34 +7,42 @@ classes = ["firefox", "librewolf", "zen", "floorp"]
 
 [[preset.gesture]]
 stroke = "L"
+name = "Back"
 action = { keys = "alt+Left" }
 
 [[preset.gesture]]
 stroke = "R"
+name = "Forward"
 action = { keys = "alt+Right" }
 
 [[preset.gesture]]
 stroke = "U"
+name = "New tab"
 action = { keys = "ctrl+t" }
 
 [[preset.gesture]]
 stroke = "DR"
+name = "Close tab"
 action = { keys = "ctrl+w" }
 
 [[preset.gesture]]
 stroke = "UL"
+name = "Reopen closed tab"
 action = { keys = "ctrl+shift+t" }
 
 [[preset.gesture]]
 stroke = "UD"
+name = "Reload"
 action = { keys = "F5" }
 
 [[preset.gesture]]
 wheel = "up"
+name = "Previous tab"
 action = { keys = "ctrl+shift+Tab" }
 
 [[preset.gesture]]
 wheel = "down"
+name = "Next tab"
 action = { keys = "ctrl+Tab" }
 
 [[preset]]
@@ -43,34 +51,42 @@ classes = ["chromium", "google-chrome", "brave-browser", "vivaldi-stable"]
 
 [[preset.gesture]]
 stroke = "L"
+name = "Back"
 action = { keys = "alt+Left" }
 
 [[preset.gesture]]
 stroke = "R"
+name = "Forward"
 action = { keys = "alt+Right" }
 
 [[preset.gesture]]
 stroke = "U"
+name = "New tab"
 action = { keys = "ctrl+t" }
 
 [[preset.gesture]]
 stroke = "DR"
+name = "Close tab"
 action = { keys = "ctrl+w" }
 
 [[preset.gesture]]
 stroke = "UL"
+name = "Reopen closed tab"
 action = { keys = "ctrl+shift+t" }
 
 [[preset.gesture]]
 stroke = "UD"
+name = "Reload"
 action = { keys = "F5" }
 
 [[preset.gesture]]
 wheel = "up"
+name = "Previous tab"
 action = { keys = "ctrl+shift+Tab" }
 
 [[preset.gesture]]
 wheel = "down"
+name = "Next tab"
 action = { keys = "ctrl+Tab" }
 
 [[preset]]
@@ -79,26 +95,32 @@ classes = ["kitty"]
 
 [[preset.gesture]]
 stroke = "L"
+name = "Previous tab"
 action = { keys = "ctrl+shift+Left" }
 
 [[preset.gesture]]
 stroke = "R"
+name = "Next tab"
 action = { keys = "ctrl+shift+Right" }
 
 [[preset.gesture]]
 stroke = "U"
+name = "New tab"
 action = { keys = "ctrl+shift+t" }
 
 [[preset.gesture]]
 stroke = "DR"
+name = "Close tab"
 action = { keys = "ctrl+shift+q" }
 
 [[preset.gesture]]
 wheel = "up"
+name = "Larger text"
 action = { keys = "ctrl+shift+equal" }
 
 [[preset.gesture]]
 wheel = "down"
+name = "Smaller text"
 action = { keys = "ctrl+shift+minus" }
 
 [[preset]]
@@ -107,22 +129,27 @@ classes = ["org.gnome.Nautilus"]
 
 [[preset.gesture]]
 stroke = "L"
+name = "Back"
 action = { keys = "alt+Left" }
 
 [[preset.gesture]]
 stroke = "R"
+name = "Forward"
 action = { keys = "alt+Right" }
 
 [[preset.gesture]]
 stroke = "U"
+name = "Parent folder"
 action = { keys = "alt+Up" }
 
 [[preset.gesture]]
 stroke = "DR"
+name = "Close"
 action = { keys = "ctrl+w" }
 
 [[preset.gesture]]
 stroke = "UD"
+name = "Reload"
 action = { keys = "ctrl+r" }
 
 [[preset]]
@@ -131,22 +158,27 @@ classes = ["org.kde.dolphin"]
 
 [[preset.gesture]]
 stroke = "L"
+name = "Back"
 action = { keys = "alt+Left" }
 
 [[preset.gesture]]
 stroke = "R"
+name = "Forward"
 action = { keys = "alt+Right" }
 
 [[preset.gesture]]
 stroke = "U"
+name = "Parent folder"
 action = { keys = "alt+Up" }
 
 [[preset.gesture]]
 stroke = "DR"
+name = "Close"
 action = { keys = "ctrl+w" }
 
 [[preset.gesture]]
 stroke = "UD"
+name = "Reload"
 action = { keys = "F5" }
 
 [[preset]]
@@ -155,24 +187,30 @@ classes = ["code", "Code", "code-oss", "codium"]
 
 [[preset.gesture]]
 stroke = "L"
+name = "Back"
 action = { keys = "ctrl+alt+minus" }
 
 [[preset.gesture]]
 stroke = "R"
+name = "Forward"
 action = { keys = "ctrl+shift+minus" }
 
 [[preset.gesture]]
 stroke = "DR"
+name = "Close editor"
 action = { keys = "ctrl+w" }
 
 [[preset.gesture]]
 stroke = "U"
+name = "Command palette"
 action = { keys = "ctrl+shift+p" }
 
 [[preset.gesture]]
 wheel = "up"
+name = "Previous editor"
 action = { keys = "ctrl+pageup" }
 
 [[preset.gesture]]
 wheel = "down"
+name = "Next editor"
 action = { keys = "ctrl+pagedown" }

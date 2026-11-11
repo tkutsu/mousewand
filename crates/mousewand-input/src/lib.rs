@@ -13,7 +13,7 @@ use anyhow::Context;
 use evdev::uinput::VirtualDevice;
 use evdev::{AttributeSet, BusType, EventType, InputEvent, InputId, KeyCode, RelativeAxisCode};
 use mousewand_core::keys::Combo;
-use mousewand_core::{Extra, Machine, Output, Settings, Wheel};
+use mousewand_core::{Extra, Machine, Output, Settings, Trigger, Wheel};
 
 /// The virtual device's name, which is also how mousewand avoids grabbing it.
 pub const VIRTUAL_NAME: &str = "mousewand virtual mouse";
@@ -41,8 +41,9 @@ pub struct Input {
 
 impl Input {
     /// Grabs the mice and starts the input thread. Gesture outputs go to
-    /// `on_gesture`; clicks and holds are handled here.
-    pub fn start(settings: Settings, on_gesture: impl Fn(Output) + Send + 'static) -> anyhow::Result<Input> {
+    /// `on_gesture`, with the trigger that started them: the main one or the
+    /// global one. Clicks and holds are handled here.
+    pub fn start(settings: Settings, on_gesture: impl Fn(Output, Trigger) + Send + 'static) -> anyhow::Result<Input> {
         let device = virtual_device().context("creating the uinput device (is /dev/uinput writable?)")?;
         let (tx, rx) = mpsc::channel();
         devices::watch(settings.devices.clone(), tx.clone())?;
@@ -51,6 +52,7 @@ impl Input {
             let mut router = Router {
                 device,
                 machine: Machine::new(&settings),
+                active: settings.trigger,
                 settings,
                 trigger_owner: None,
                 held: HashSet::new(),
@@ -129,6 +131,8 @@ struct Router<F> {
     device: VirtualDevice,
     settings: Settings,
     machine: Machine,
+    /// The trigger the machine is handling, or handled last.
+    active: Trigger,
     /// The mouse whose trigger press the machine is handling.
     trigger_owner: Option<DeviceId>,
     /// Buttons each mouse holds down. The virtual device sends a press for
@@ -142,21 +146,22 @@ struct Router<F> {
     on_gesture: F,
 }
 
-impl<F: Fn(Output)> Router<F> {
+impl<F: Fn(Output, Trigger)> Router<F> {
     fn batch(&mut self, id: DeviceId, events: Vec<InputEvent>, now: Duration) -> std::io::Result<()> {
-        let trigger = self.settings.trigger.0;
         let mut forward = Vec::with_capacity(events.len());
         let mut outputs = Vec::new();
         let (mut dx, mut dy) = (0.0, 0.0);
         for event in events {
             let (code, value) = (event.code(), event.value());
             match event.event_type() {
-                EventType::KEY if code == trigger => outputs.extend(self.trigger(id, value, now)),
+                // First, so the other trigger, pressed during a gesture, is
+                // released as the claimed button it became.
                 EventType::KEY if self.claimed.contains(&(id, code)) => {
                     if value == 0 {
                         self.claimed.remove(&(id, code));
                     }
                 }
+                EventType::KEY if self.is_trigger(code) => outputs.extend(self.trigger(id, code, value, now)),
                 EventType::KEY if value == 1 && self.machine.claims() => {
                     outputs.extend(self.machine.claim(Extra::Button(code)).unwrap_or_default());
                     self.claimed.insert((id, code));
@@ -193,12 +198,21 @@ impl<F: Fn(Output)> Router<F> {
         self.act(outputs)
     }
 
+    /// Either trigger while none is down; then only the one that is.
+    fn is_trigger(&self, code: u16) -> bool {
+        match self.trigger_owner {
+            Some(_) => code == self.active.0,
+            None => code == self.settings.trigger.0 || self.settings.global_trigger.is_some_and(|t| t.0 == code),
+        }
+    }
+
     /// Only the mouse that pressed the trigger can release it; a second
     /// mouse's trigger is ignored while the first is down.
-    fn trigger(&mut self, id: DeviceId, value: i32, now: Duration) -> Vec<Output> {
+    fn trigger(&mut self, id: DeviceId, code: u16, value: i32, now: Duration) -> Vec<Output> {
         match (value, self.trigger_owner) {
             (1, None) => {
                 self.trigger_owner = Some(id);
+                self.active = Trigger(code);
                 // Each press starts with the latest settings.
                 self.machine = Machine::new(&self.settings);
                 self.machine.press(now)
@@ -280,9 +294,9 @@ impl<F: Fn(Output)> Router<F> {
     fn act(&mut self, outputs: Vec<Output>) -> std::io::Result<()> {
         for output in outputs {
             match output {
-                Output::Press => self.key(self.settings.trigger.0, 1)?,
-                Output::Release => self.key(self.settings.trigger.0, 0)?,
-                gesture => (self.on_gesture)(gesture),
+                Output::Press => self.key(self.active.0, 1)?,
+                Output::Release => self.key(self.active.0, 0)?,
+                gesture => (self.on_gesture)(gesture, self.active),
             }
         }
         Ok(())

@@ -1,15 +1,19 @@
 [[gesture]]
 stroke = "L"
-action = { keys = "ctrl+shift+Left" }   # previous tab
+name = "Previous tab"
+action = { keys = "ctrl+shift+Left" }
 
 [[gesture]]
 stroke = "R"
-action = { keys = "ctrl+shift+Right" }  # next tab
+name = "Next tab"
+action = { keys = "ctrl+shift+Right" }
 
 [[gesture]]
 stroke = "U"
-action = { keys = "ctrl+shift+t" }      # new tab
+name = "New tab"
+action = { keys = "ctrl+shift+t" }
 
 [[gesture]]
 stroke = "DR"
-action = { keys = "ctrl+shift+q" }      # close tab
+name = "Close tab"
+action = { keys = "ctrl+shift+q" }

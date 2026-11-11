@@ -1,8 +1,10 @@
 //! Config types and per-app gesture lookup.
 //!
-//! `config.toml` holds settings and global gestures; each `apps/<name>.toml`
-//! holds the gestures for one app, matched by window class. Parsing is pure:
-//! the caller reads the files and passes their text in.
+//! `config.toml` holds settings, the gestures every app gets unless it
+//! overrides them, the `[global]` gestures no app overrides, and the `[hint]`
+//! style. Each `apps/<name>.toml` holds the gestures for one app, matched by
+//! window class. Parsing is pure: the caller reads the files and passes their
+//! text in.
 
 use std::str::FromStr;
 
@@ -14,8 +16,13 @@ use crate::stroke::Stroke;
 #[derive(Clone, Debug, Default)]
 pub struct Config {
     pub settings: Settings,
+    /// Every app gets these, unless it has its own for the same input.
     pub gestures: Vec<Gesture>,
     pub apps: Vec<App>,
+    /// The same in every app, never overridden. With `settings.global_trigger`
+    /// they belong to that button alone.
+    pub global: Vec<Gesture>,
+    pub hint: HintStyle,
     /// Set by the caller from `themes/<settings.theme>.toml`.
     pub theme: Theme,
 }
@@ -82,6 +89,26 @@ impl FromStr for Color {
     }
 }
 
+/// An sRGB color with alpha, written `"#rrggbb"` or `"#rrggbbaa"`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rgba(pub [f32; 4]);
+
+impl FromStr for Rgba {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, String> {
+        let bad = || format!("bad color {s:?}: write it as \"#rrggbb\" or \"#rrggbbaa\"");
+        let hex = s.strip_prefix('#').filter(|h| h.is_ascii()).ok_or_else(bad)?;
+        let alpha = match hex.len() {
+            6 => 1.0,
+            8 => u8::from_str_radix(&hex[6..], 16).map_err(|_| bad())? as f32 / 255.0,
+            _ => return Err(bad()),
+        };
+        let Color([r, g, b]) = format!("#{}", &hex[..6]).parse::<Color>().map_err(|_| bad())?;
+        Ok(Rgba([r, g, b, alpha]))
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
@@ -97,6 +124,9 @@ pub struct Settings {
     pub devices: Vec<String>,
     /// The trail theme: a file in `themes/` without `.toml`, or "default".
     pub theme: String,
+    /// The button for the global gestures alone, from `[global]`.
+    #[serde(skip)]
+    pub global_trigger: Option<Trigger>,
 }
 
 impl Default for Settings {
@@ -108,6 +138,7 @@ impl Default for Settings {
             min_segment: 30.0,
             devices: Vec::new(),
             theme: "default".into(),
+            global_trigger: None,
         }
     }
 }
@@ -154,6 +185,26 @@ pub struct Gesture {
     pub input: Input,
     pub kind: Kind,
     pub action: Action,
+    /// What the hint calls it, e.g. "Back".
+    pub name: Option<String>,
+}
+
+impl Gesture {
+    /// Its name, else what it does: the keys, command or dispatcher.
+    pub fn label(&self) -> String {
+        if let Some(name) = &self.name {
+            return name.clone();
+        }
+        let text = match &self.action {
+            Action::Keys(combo) => combo.to_string(),
+            Action::Command(command) | Action::Dispatch(command) => command.clone(),
+        };
+        // Long commands shorten to their first 40 characters.
+        match text.char_indices().nth(40) {
+            Some((end, _)) => format!("{}…", &text[..end]),
+            None => text,
+        }
+    }
 }
 
 /// What the user does while holding the trigger.
@@ -214,6 +265,7 @@ struct RawGesture {
     step: Option<f64>,
     hold: Option<String>,
     action: Action,
+    name: Option<String>,
 }
 
 const DEFAULT_STEP: f64 = 80.0;
@@ -263,6 +315,7 @@ impl TryFrom<RawGesture> for Gesture {
             input,
             kind,
             action: raw.action,
+            name: raw.name.filter(|n| !n.trim().is_empty()),
         })
     }
 }
@@ -281,6 +334,137 @@ struct MainFile {
     settings: Settings,
     #[serde(default, rename = "gesture")]
     gestures: Vec<Gesture>,
+    #[serde(default)]
+    global: GlobalFile,
+    #[serde(default)]
+    hint: HintStyle,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GlobalFile {
+    trigger: Option<Trigger>,
+    #[serde(default, rename = "gesture")]
+    gestures: Vec<Gesture>,
+}
+
+/// The hint: the stroke so far as arrows, what it could still become, and
+/// what fired. Every field is optional; it's off unless `enabled`.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct HintStyle {
+    pub enabled: bool,
+    /// List the gestures the stroke could still become.
+    pub next: bool,
+    #[serde(deserialize_with = "parsed")]
+    pub position: Position,
+    /// Distance from the screen edge, in logical px.
+    pub margin: f32,
+    /// A font family, e.g. "Inter"; "sans-serif" picks the system's.
+    pub font: String,
+    /// Text size, in logical px. Arrows match it.
+    pub size: f32,
+    #[serde(deserialize_with = "parsed")]
+    pub text: Rgba,
+    /// The arrows.
+    #[serde(deserialize_with = "parsed")]
+    pub glyph: Rgba,
+    #[serde(deserialize_with = "parsed")]
+    pub background: Rgba,
+    /// Of the whole hint, 0 to 1.
+    pub opacity: f32,
+    pub padding: f32,
+    pub radius: f32,
+}
+
+impl Default for HintStyle {
+    fn default() -> Self {
+        HintStyle {
+            enabled: false,
+            next: true,
+            position: Position::default(),
+            margin: 64.0,
+            font: "sans-serif".into(),
+            size: 17.0,
+            text: Rgba([0.95, 0.95, 0.97, 1.0]),
+            glyph: Rgba([0.62, 0.77, 1.0, 1.0]),
+            background: Rgba([0.11, 0.12, 0.15, 1.0]),
+            opacity: 0.9,
+            padding: 14.0,
+            radius: 14.0,
+        }
+    }
+}
+
+/// Where on the screen the hint sits, written like "bottom center".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Position {
+    pub vertical: Align,
+    pub horizontal: Align,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Align {
+    Start,
+    Center,
+    End,
+}
+
+impl Default for Position {
+    fn default() -> Self {
+        Position {
+            vertical: Align::End,
+            horizontal: Align::Center,
+        }
+    }
+}
+
+impl FromStr for Position {
+    type Err = String;
+
+    /// One or two words in any order: top, bottom, left, right and center.
+    /// A missing one is center: "top" is "top center".
+    fn from_str(s: &str) -> Result<Self, String> {
+        let bad = || format!("bad position {s:?}: write it like \"bottom center\" or \"top right\"");
+        let words: Vec<String> = s.split_whitespace().map(str::to_ascii_lowercase).collect();
+        if words.is_empty() || words.len() > 2 {
+            return Err(bad());
+        }
+        let (mut vertical, mut horizontal) = (None, None);
+        let mut centers = 0;
+        for word in &words {
+            match word.as_str() {
+                "top" if vertical.is_none() => vertical = Some(Align::Start),
+                "bottom" if vertical.is_none() => vertical = Some(Align::End),
+                "left" if horizontal.is_none() => horizontal = Some(Align::Start),
+                "right" if horizontal.is_none() => horizontal = Some(Align::End),
+                "center" | "middle" => centers += 1,
+                _ => return Err(bad()),
+            }
+        }
+        if centers > 2 - vertical.iter().count() - horizontal.iter().count() {
+            return Err(bad());
+        }
+        Ok(Position {
+            vertical: vertical.unwrap_or(Align::Center),
+            horizontal: horizontal.unwrap_or(Align::Center),
+        })
+    }
+}
+
+impl HintStyle {
+    fn check(&self) -> Result<(), String> {
+        if !(0.0..=1.0).contains(&self.opacity) {
+            return Err(format!("hint opacity must be from 0 to 1, not {}", self.opacity));
+        }
+        if self.size <= 0.0 {
+            return Err("hint size must be positive".into());
+        }
+        if self.margin < 0.0 || self.padding < 0.0 || self.radius < 0.0 {
+            return Err("hint margin, padding and radius can't be negative".into());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Deserialize)]
@@ -296,8 +480,27 @@ impl Config {
     /// Parses `config.toml` and the app files, given as `(file stem, text)`.
     /// An app file without `match` matches the class named by its stem.
     pub fn parse(main: &str, apps: &[(String, String)]) -> Result<Config, String> {
-        let main: MainFile = toml::from_str(main).map_err(|e| format!("config.toml: {e}"))?;
-        check_prefixes(&main.gestures).map_err(|e| format!("config.toml: {e}"))?;
+        let mut main: MainFile = toml::from_str(main).map_err(|e| format!("config.toml: {e}"))?;
+        let in_main = |e: String| format!("config.toml: {e}");
+        main.hint.check().map_err(in_main)?;
+        let shared = match main.global.trigger {
+            Some(trigger) if trigger == main.settings.trigger => {
+                return Err(in_main(
+                    "[global] has the same trigger as the other gestures; leave it out to share it".into(),
+                ));
+            }
+            Some(_) => false,
+            None => true,
+        };
+        main.settings.global_trigger = main.global.trigger;
+        let global = main.global.gestures;
+        if shared {
+            check_global(&global, &main.gestures).map_err(in_main)?;
+            check_prefixes(&[global.as_slice(), &main.gestures].concat()).map_err(in_main)?;
+        } else {
+            check_prefixes(&global).map_err(in_main)?;
+            check_prefixes(&main.gestures).map_err(in_main)?;
+        }
         let apps = apps
             .iter()
             .map(|(stem, text)| {
@@ -311,7 +514,13 @@ impl Config {
                     classes,
                     gestures: file.gestures,
                 };
-                check_prefixes(&merged(&app.gestures, &main.gestures)).map_err(|e| format!("apps/{stem}.toml: {e}"))?;
+                let in_app = |e: String| format!("apps/{stem}.toml: {e}");
+                let mut gestures = merged(&app.gestures, &main.gestures);
+                if shared {
+                    check_global(&global, &app.gestures).map_err(in_app)?;
+                    gestures.extend(global.iter().cloned());
+                }
+                check_prefixes(&gestures).map_err(in_app)?;
                 Ok(app)
             })
             .collect::<Result<_, String>>()?;
@@ -319,11 +528,14 @@ impl Config {
             settings: main.settings,
             gestures: main.gestures,
             apps,
+            global,
+            hint: main.hint,
             theme: Theme::default(),
         })
     }
 
-    /// The gestures for a window of `class`: its app's, then the global ones
+    /// The gestures for the trigger over a window of `class`: the global
+    /// ones unless they have their own trigger, its app's, the shared ones
     /// the app doesn't override, then the settings gesture unless something
     /// else uses its stroke.
     pub fn gestures_for(&self, class: &str) -> Vec<Gesture> {
@@ -331,12 +543,21 @@ impl Config {
             .apps
             .iter()
             .find(|app| app.classes.iter().any(|c| c.eq_ignore_ascii_case(class)));
-        let mut gestures = merged(app.map_or(&[], |a| &a.gestures), &self.gestures);
+        let mut gestures = match self.settings.global_trigger {
+            Some(_) => Vec::new(),
+            None => self.global.clone(),
+        };
+        gestures.extend(merged(app.map_or(&[], |a| &a.gestures), &self.gestures));
         let settings = settings_gesture();
         if !gestures.iter().any(|g| g.input == settings.input) {
             gestures.push(settings);
         }
         gestures
+    }
+
+    /// The gestures for the global trigger, if `[global]` has one.
+    pub fn global_gestures(&self) -> Vec<Gesture> {
+        self.global.clone()
     }
 }
 
@@ -350,6 +571,7 @@ fn settings_gesture() -> Gesture {
         input: Input::Stroke(SETTINGS_STROKE.parse().expect("a valid stroke")),
         kind: Kind::Oneshot,
         action: Action::Command("mousewand-settings".into()),
+        name: Some("mousewand settings".into()),
     }
 }
 
@@ -359,6 +581,27 @@ fn merged(app: &[Gesture], global: &[Gesture]) -> Vec<Gesture> {
         .chain(global.iter().filter(|g| !overridden(g)))
         .cloned()
         .collect()
+}
+
+/// Global gestures sharing the trigger can't be overridden, so nothing else
+/// may use their input.
+fn check_global(global: &[Gesture], others: &[Gesture]) -> Result<(), String> {
+    match others.iter().find(|o| global.iter().any(|g| g.input == o.input)) {
+        Some(taken) => Err(format!(
+            "{} is already a [global] gesture, which no app overrides",
+            describe(&taken.input)
+        )),
+        None => Ok(()),
+    }
+}
+
+fn describe(input: &Input) -> String {
+    match input {
+        Input::Stroke(stroke) => format!("stroke {stroke}"),
+        Input::Wheel(wheel) => format!("wheel {wheel:?}").to_lowercase(),
+        Input::Rocker(BTN_LEFT) => "rocker left".into(),
+        Input::Rocker(_) => "rocker right".into(),
+    }
 }
 
 /// A repeat or hold gesture fires as soon as its stroke matches, so a longer
@@ -568,6 +811,105 @@ mod tests {
         assert!(Theme::parse("color = \"orange\"").unwrap_err().contains("#rrggbb"));
         assert!(Theme::parse("width = 0").is_err());
         assert!(Theme::parse("colour = \"#ffffff\"").is_err());
+    }
+
+    #[test]
+    fn global_gestures_share_the_trigger_and_win() {
+        let main = r#"
+            [[gesture]]
+            stroke = "L"
+            action = { keys = "a" }
+
+            [[global.gesture]]
+            stroke = "R"
+            name = "Next workspace"
+            action = { dispatch = "workspace +1" }
+        "#;
+        let c = Config::parse(main, &[]).unwrap();
+        assert_eq!(c.settings.global_trigger, None);
+        let gestures = c.gestures_for("firefox");
+        assert_eq!(gestures[0].label(), "Next workspace");
+        assert!(gestures.iter().any(|g| g.input == stroke("L")));
+        assert!(c.global_gestures().len() == 1);
+
+        let clash = "[[gesture]]\nstroke = \"R\"\naction = { keys = \"b\" }";
+        let bad = Config::parse(main, &[("kitty".into(), clash.into())]).unwrap_err();
+        assert!(bad.contains("apps/kitty.toml") && bad.contains("[global]"), "{bad}");
+    }
+
+    #[test]
+    fn global_gestures_can_have_their_own_trigger() {
+        let main = r#"
+            [global]
+            trigger = "extra"
+
+            [[global.gesture]]
+            stroke = "R"
+            action = { dispatch = "workspace +1" }
+
+            [[gesture]]
+            stroke = "R"
+            action = { keys = "alt+Right" }
+        "#;
+        let c = Config::parse(main, &[]).unwrap();
+        assert_eq!(c.settings.global_trigger, Some(Trigger(0x114)));
+        // The same stroke is free for the other trigger.
+        assert_eq!(
+            action_for(&c, "firefox", stroke("R")),
+            Some(Action::Keys("alt+Right".parse().unwrap()))
+        );
+        assert_eq!(c.global_gestures()[0].action, Action::Dispatch("workspace +1".into()));
+        let same = Config::parse("[global]\ntrigger = \"middle\"", &[]).unwrap_err();
+        assert!(same.contains("same trigger"), "{same}");
+    }
+
+    #[test]
+    fn labels_and_hint_style() {
+        let c = Config::parse(
+            r#"
+            [hint]
+            enabled = true
+            position = "top right"
+            opacity = 0.5
+
+            [[gesture]]
+            stroke = "D"
+            action = { command = "a very long command that goes on and on and on for a while" }
+            "#,
+            &[],
+        )
+        .unwrap();
+        assert!(c.hint.enabled && c.hint.next);
+        assert_eq!(
+            c.hint.position,
+            Position {
+                vertical: Align::Start,
+                horizontal: Align::End
+            }
+        );
+        assert_eq!(c.gestures[0].label().chars().count(), 41);
+        assert_eq!(
+            "center".parse::<Position>().unwrap(),
+            Position {
+                vertical: Align::Center,
+                horizontal: Align::Center
+            }
+        );
+        assert_eq!("left".parse::<Position>().unwrap().vertical, Align::Center);
+        assert!("top bottom".parse::<Position>().is_err());
+        assert!("center center center".parse::<Position>().is_err());
+        assert!(
+            Config::parse("[hint]\nopacity = 2", &[])
+                .unwrap_err()
+                .contains("opacity")
+        );
+        assert!(Config::parse("[hint]\ncolour = \"#fff\"", &[]).is_err());
+        assert_eq!(
+            "#ff000080".parse::<Rgba>().unwrap(),
+            Rgba([1.0, 0.0, 0.0, 128.0 / 255.0])
+        );
+        assert_eq!("#00ff00".parse::<Rgba>().unwrap().0[3], 1.0);
+        assert!("#00ff0".parse::<Rgba>().is_err() && "00ff00".parse::<Rgba>().is_err());
     }
 
     #[test]

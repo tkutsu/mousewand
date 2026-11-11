@@ -86,5 +86,7 @@ mod tests {
         assert_eq!(config.apps.len(), 2);
         let l = mousewand_core::Input::Stroke("L".parse().unwrap());
         assert!(config.gestures_for("firefox").iter().any(|g| g.input == l));
+        assert_eq!(config.global.len(), 3);
+        assert!(config.hint.enabled);
     }
 }

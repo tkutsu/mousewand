@@ -6,7 +6,7 @@
 //!                        SCRIPT, e.g. "down; move -6 0 40; up"
 //!
 //! Script steps, separated by `;`: `down`, `up` (the middle button),
-//! `press BUTTON`, `release BUTTON` (left, right or middle), `wheel N`
+//! `press BUTTON`, `release BUTTON` (left, right, middle, side or extra), `wheel N`
 //! (N notches, negative is down), `move DX DY N` (N motion events, 4 ms
 //! apart), `wait MS`, and `run COMMAND` (e.g. a screenshot mid-stroke).
 //! Point mousewand at the fake mouse with `devices = ["mousewand test mouse"]`.
@@ -92,6 +92,8 @@ fn play(script: &str) -> anyhow::Result<()> {
         "left" => Ok(KeyCode::BTN_LEFT),
         "right" => Ok(KeyCode::BTN_RIGHT),
         "middle" => Ok(KeyCode::BTN_MIDDLE),
+        "side" => Ok(KeyCode::BTN_SIDE),
+        "extra" => Ok(KeyCode::BTN_EXTRA),
         _ => Err(anyhow::anyhow!("unknown button {name:?}")),
     };
     for step in script.split(';').map(str::trim).filter(|s| !s.is_empty()) {

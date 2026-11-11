@@ -1,43 +1,71 @@
 # ~/.config/mousewand/config.toml
 # Every setting is optional; these are the defaults.
 
-trigger = "middle"     # middle, side, extra, forward, back or task
+trigger = "middle"     # middle, side, extra (mouse 5), forward, back or task
 threshold = 8          # motion before a press becomes a gesture (≈ px)
 hold_ms = 300          # holding still this long makes it a normal press
 min_segment = 30       # shorter strokes are ignored as noise
 devices = []           # only grab mice whose name contains one of these
 theme = "default"      # or a file in themes/, without .toml
 
-# Global gestures, for every window. Per-app files in apps/ override them.
 # Strokes: U D L R, plus diagonals as numpad digits: 7 ↖  9 ↗  1 ↙  3 ↘
+# `name` is what hints show; without it they show the keys or command.
 
+# Gestures for every app. An app file in apps/ can replace them.
 [[gesture]]
 stroke = "UD"
+name = "Say hello"
 action = { command = "notify-send mousewand \"gesture over $MOUSEWAND_CLASS\"" }
-
-# `dispatch` is passed to Hyprland as is. Lua-config Hyprland (0.55+)
-# takes Lua dispatchers; older versions take e.g. "workspace e+1".
-[[gesture]]
-stroke = "RU"
-action = { dispatch = 'hl.dsp.focus({ workspace = "e+1" })' }
-
-[[gesture]]
-stroke = "LU"
-action = { dispatch = 'hl.dsp.focus({ workspace = "e-1" })' }
-
-# A real alt-tab: alt goes down when "9" (↗) is recognized, every 80 px
-# further up-right taps tab, and releasing the trigger lets go of alt.
-[[gesture]]
-stroke = "9"
-kind = "hold"
-hold = "alt"
-action = { keys = "Tab" }
 
 # Trigger + wheel: volume.
 [[gesture]]
 wheel = "up"
+name = "Volume up"
 action = { command = "wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+" }
 
 [[gesture]]
 wheel = "down"
+name = "Volume down"
 action = { command = "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-" }
+
+# Global gestures: the same in every app, and no app file can replace them.
+# With a `trigger` of their own, that button runs them and nothing else.
+[global]
+# trigger = "side"
+
+# `dispatch` is passed to Hyprland as is. Lua-config Hyprland (0.55+)
+# takes Lua dispatchers; older versions take e.g. "workspace e+1".
+[[global.gesture]]
+stroke = "RU"
+name = "Next workspace"
+action = { dispatch = 'hl.dsp.focus({ workspace = "e+1" })' }
+
+[[global.gesture]]
+stroke = "LU"
+name = "Previous workspace"
+action = { dispatch = 'hl.dsp.focus({ workspace = "e-1" })' }
+
+# A real alt-tab: alt goes down when "9" (↗) is recognized, every 80 px
+# further up-right taps tab, and releasing the trigger lets go of alt.
+[[global.gesture]]
+stroke = "9"
+kind = "hold"
+hold = "alt"
+name = "Switch windows"
+action = { keys = "Tab" }
+
+# Hints: the stroke so far as arrows, what it could still become, and the
+# name of what fired.
+[hint]
+enabled = true
+next = true                  # list the gestures the stroke could still become
+position = "bottom center"   # top, center or bottom, with left, center or right
+margin = 64                  # from the screen edge, px
+font = "sans-serif"          # any installed font family, e.g. "Inter"
+size = 17                    # text size, px; arrows match it
+text = "#f2f2f7"
+glyph = "#9ec4ff"            # the arrows
+background = "#1c1e26"       # "#rrggbbaa" for a see-through background
+opacity = 0.9                # of the whole hint
+padding = 14
+radius = 14

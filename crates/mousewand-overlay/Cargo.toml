@@ -7,11 +7,13 @@ license.workspace = true
 
 [dependencies]
 mousewand-core.workspace = true
+ab_glyph = "0.2"
 anyhow.workspace = true
 log.workspace = true
 bytemuck = { version = "1", features = ["derive"] }
 pollster = "0.4"
 raw-window-handle = "0.6"
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
 smithay-client-toolkit = { version = "0.21", features = ["system"] }
 wgpu = "30"
 x11rb = { version = "0.14", features = ["allow-unsafe-code", "dl-libxcb", "shape"] }
