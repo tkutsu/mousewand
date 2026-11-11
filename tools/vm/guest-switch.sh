@@ -2,7 +2,8 @@
 # Usage: switch.sh COMPOSITOR — stops whatever runs on tty1 and starts it.
 echo "$1" > ~/compositor
 pkill -x foot
-for c in sway kwin_wayland gnome-shell niri cosmic-comp wayfire labwc river; do
+pkill -x xterm
+for c in sway kwin_wayland gnome-shell niri cosmic-comp wayfire labwc river xfwm4 Xorg; do
   pkill -x "$c"
 done
 sleep 8

@@ -3,11 +3,14 @@
 //! can't block fullscreen direct scanout or eat clicks if wisp crashes.
 
 mod gpu;
+mod scene;
 mod trail;
+mod x11;
+
+pub use x11::X11Overlay;
 
 use std::sync::mpsc;
 use std::thread;
-use std::time::Instant;
 
 use anyhow::Context;
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, FrameCallbackData, Region};
@@ -31,7 +34,7 @@ use smithay_client_toolkit::shell::wlr_layer::{
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 
 use gpu::{Gpu, Target};
-use trail::{Style, Trail};
+use scene::Scene;
 use wisp_core::Theme;
 
 /// The layer namespace, so users can write `layerrule = noanim, wisp`.
@@ -127,11 +130,7 @@ struct Active {
     /// Logical size, once configured.
     size: Option<(u32, u32)>,
     scale: i32,
-    trail: Trail,
-    /// Ring pulses: when, in seconds since `start`, and where.
-    pulses: Vec<(f32, (f32, f32))>,
-    start: Instant,
-    ended: Option<(Instant, bool)>,
+    scene: Scene,
 }
 
 impl State {
@@ -180,14 +179,13 @@ impl State {
             }
             Command::Theme(theme) => self.theme = theme,
             Command::Tick => {
-                let Some(active) = &mut self.active else { return };
-                if let Some(head) = active.trail.head() {
-                    active.pulses.push((active.start.elapsed().as_secs_f32(), head));
+                if let Some(active) = &mut self.active {
+                    active.scene.tick();
                 }
             }
             Command::End { matched } => {
                 let Some(active) = &mut self.active else { return };
-                active.ended = Some((Instant::now(), matched));
+                active.scene.end(matched);
                 // From here on clicks go to the windows below.
                 if let Ok(region) = Region::new(&self.compositor) {
                     active.layer.set_input_region(Some(region.wl_region()));
@@ -218,10 +216,7 @@ impl State {
             layer,
             size: None,
             scale: 1,
-            trail: Trail::default(),
-            pulses: Vec::new(),
-            start: Instant::now(),
-            ended: None,
+            scene: Scene::new(),
         });
         Ok(())
     }
@@ -233,7 +228,7 @@ impl State {
         active.layer.wl_surface().set_buffer_scale(scale);
         if let Err(e) = self
             .gpu
-            .configure(&mut active.target, w * scale as u32, h * scale as u32)
+            .configure(&mut active.target, w * scale as u32, h * scale as u32, false)
         {
             log::error!("overlay disabled for this gesture: {e:#}");
             self.active = None;
@@ -243,37 +238,14 @@ impl State {
     fn draw(&mut self) {
         let Some(active) = &mut self.active else { return };
         let Some((w, h)) = active.size else { return };
-        let theme = &self.theme;
-        let fade = match active.ended {
-            Some((at, _)) => 1.0 - at.elapsed().as_secs_f32() * 1000.0 / theme.fade_ms.max(1) as f32,
-            None => 1.0,
-        };
-        if fade <= 0.0 {
+        let target = &active.target;
+        let Some(strips) = active
+            .scene
+            .strips((w as f32, h as f32), &self.theme, |c| target.color(c))
+        else {
             self.active = None;
             return;
-        }
-        let color = match active.ended {
-            Some((_, false)) => theme.rejected,
-            _ => theme.color,
         };
-        let style = Style {
-            color: active.target.color(color.0),
-            glow: theme.glow,
-            fade,
-            width: theme.width,
-            life: theme.life_ms as f32 / 1000.0,
-        };
-        let now = active.start.elapsed().as_secs_f32();
-        let size = (w as f32, h as f32);
-        active.pulses.retain(|&(t, _)| now - t < trail::RING_LIFE);
-        let mut strips = vec![active.trail.mesh(now, size, &style)];
-        strips.push(active.trail.cap(now, size, &style));
-        strips.extend(
-            active
-                .pulses
-                .iter()
-                .map(|&(t, center)| trail::ring(center, now - t, size, &style)),
-        );
         let surface = active.layer.wl_surface();
         // Ask for the next frame before presenting, which commits.
         surface.frame(&self.qh, FrameCallbackData(surface.clone()));
@@ -382,12 +354,8 @@ impl PointerHandler for State {
                 PointerEventKind::Motion { .. } => {}
                 _ => continue,
             }
-            if active.ended.is_none() {
-                let (x, y) = event.position;
-                active
-                    .trail
-                    .push(x as f32, y as f32, active.start.elapsed().as_secs_f32());
-            }
+            let (x, y) = event.position;
+            active.scene.push(x as f32, y as f32);
         }
     }
 }

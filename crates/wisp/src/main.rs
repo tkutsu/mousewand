@@ -11,7 +11,7 @@ use anyhow::Context;
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 use wisp_core::{Output, Trail};
 use wisp_input::Input;
-use wisp_overlay::Overlay;
+use wisp_overlay::{Overlay, X11Overlay};
 
 use daemon::Daemon;
 
@@ -51,9 +51,14 @@ fn main() -> anyhow::Result<()> {
         }
     })?;
 
+    // The compositor's own trail (GNOME), else wisp's overlay for the session.
     let overlay = backend.trail().or_else(|| {
-        let overlay = Overlay::start().inspect_err(|e| log::warn!("no trail: {e:#}")).ok()?;
-        Some(Box::new(overlay) as Box<dyn Trail>)
+        let overlay = if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+            Overlay::start().map(|o| Box::new(o) as Box<dyn Trail>)
+        } else {
+            X11Overlay::start().map(|o| Box::new(o) as Box<dyn Trail>)
+        };
+        overlay.inspect_err(|e| log::warn!("no trail: {e:#}")).ok()
     });
     if let Some(overlay) = &overlay {
         overlay.set_theme(config.theme.clone());
