@@ -1,0 +1,178 @@
+# Ready-made gestures, offered in the app's tab of mousewand-settings.
+# Each preset uses the app's standard shortcuts.
+
+[[preset]]
+name = "Firefox"
+classes = ["firefox", "librewolf", "zen", "floorp"]
+
+[[preset.gesture]]
+stroke = "L"
+action = { keys = "alt+Left" }
+
+[[preset.gesture]]
+stroke = "R"
+action = { keys = "alt+Right" }
+
+[[preset.gesture]]
+stroke = "U"
+action = { keys = "ctrl+t" }
+
+[[preset.gesture]]
+stroke = "DR"
+action = { keys = "ctrl+w" }
+
+[[preset.gesture]]
+stroke = "UL"
+action = { keys = "ctrl+shift+t" }
+
+[[preset.gesture]]
+stroke = "UD"
+action = { keys = "F5" }
+
+[[preset.gesture]]
+wheel = "up"
+action = { keys = "ctrl+shift+Tab" }
+
+[[preset.gesture]]
+wheel = "down"
+action = { keys = "ctrl+Tab" }
+
+[[preset]]
+name = "Chromium"
+classes = ["chromium", "google-chrome", "brave-browser", "vivaldi-stable"]
+
+[[preset.gesture]]
+stroke = "L"
+action = { keys = "alt+Left" }
+
+[[preset.gesture]]
+stroke = "R"
+action = { keys = "alt+Right" }
+
+[[preset.gesture]]
+stroke = "U"
+action = { keys = "ctrl+t" }
+
+[[preset.gesture]]
+stroke = "DR"
+action = { keys = "ctrl+w" }
+
+[[preset.gesture]]
+stroke = "UL"
+action = { keys = "ctrl+shift+t" }
+
+[[preset.gesture]]
+stroke = "UD"
+action = { keys = "F5" }
+
+[[preset.gesture]]
+wheel = "up"
+action = { keys = "ctrl+shift+Tab" }
+
+[[preset.gesture]]
+wheel = "down"
+action = { keys = "ctrl+Tab" }
+
+[[preset]]
+name = "kitty"
+classes = ["kitty"]
+
+[[preset.gesture]]
+stroke = "L"
+action = { keys = "ctrl+shift+Left" }
+
+[[preset.gesture]]
+stroke = "R"
+action = { keys = "ctrl+shift+Right" }
+
+[[preset.gesture]]
+stroke = "U"
+action = { keys = "ctrl+shift+t" }
+
+[[preset.gesture]]
+stroke = "DR"
+action = { keys = "ctrl+shift+q" }
+
+[[preset.gesture]]
+wheel = "up"
+action = { keys = "ctrl+shift+equal" }
+
+[[preset.gesture]]
+wheel = "down"
+action = { keys = "ctrl+shift+minus" }
+
+[[preset]]
+name = "Nautilus"
+classes = ["org.gnome.Nautilus"]
+
+[[preset.gesture]]
+stroke = "L"
+action = { keys = "alt+Left" }
+
+[[preset.gesture]]
+stroke = "R"
+action = { keys = "alt+Right" }
+
+[[preset.gesture]]
+stroke = "U"
+action = { keys = "alt+Up" }
+
+[[preset.gesture]]
+stroke = "DR"
+action = { keys = "ctrl+w" }
+
+[[preset.gesture]]
+stroke = "UD"
+action = { keys = "ctrl+r" }
+
+[[preset]]
+name = "Dolphin"
+classes = ["org.kde.dolphin"]
+
+[[preset.gesture]]
+stroke = "L"
+action = { keys = "alt+Left" }
+
+[[preset.gesture]]
+stroke = "R"
+action = { keys = "alt+Right" }
+
+[[preset.gesture]]
+stroke = "U"
+action = { keys = "alt+Up" }
+
+[[preset.gesture]]
+stroke = "DR"
+action = { keys = "ctrl+w" }
+
+[[preset.gesture]]
+stroke = "UD"
+action = { keys = "F5" }
+
+[[preset]]
+name = "VS Code"
+classes = ["code", "Code", "code-oss", "codium"]
+
+[[preset.gesture]]
+stroke = "L"
+action = { keys = "ctrl+alt+minus" }
+
+[[preset.gesture]]
+stroke = "R"
+action = { keys = "ctrl+shift+minus" }
+
+[[preset.gesture]]
+stroke = "DR"
+action = { keys = "ctrl+w" }
+
+[[preset.gesture]]
+stroke = "U"
+action = { keys = "ctrl+shift+p" }
+
+[[preset.gesture]]
+wheel = "up"
+action = { keys = "ctrl+pageup" }
+
+[[preset.gesture]]
+wheel = "down"
+action = { keys = "ctrl+pagedown" }

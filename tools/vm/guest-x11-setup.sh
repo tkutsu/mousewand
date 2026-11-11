@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Starts an X11 session (xfwm4, without its compositor, so wisp starts picom)
+# Starts an X11 session (xfwm4, without its compositor, so mousewand starts picom)
 # and two xterms:
 # class "XTerm" on the left, "Other" on the right.
 bash ~/switch.sh x11 > /dev/null

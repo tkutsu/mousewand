@@ -2469,6 +2469,86 @@ dependencies = [
 ]
 
 [[package]]
+name = "mousewand"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+ "mousewand-backend",
+ "mousewand-core",
+ "mousewand-input",
+ "mousewand-overlay",
+ "notify",
+ "signal-hook",
+ "zbus",
+]
+
+[[package]]
+name = "mousewand-backend"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "mousewand-core",
+ "serde",
+ "serde_json",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-wlr",
+ "wayland-scanner",
+ "x11rb",
+ "zbus",
+]
+
+[[package]]
+name = "mousewand-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml 1.2.1+spec-1.1.0",
+]
+
+[[package]]
+name = "mousewand-input"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "evdev",
+ "log",
+ "mousewand-core",
+ "notify",
+]
+
+[[package]]
+name = "mousewand-overlay"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "log",
+ "mousewand-core",
+ "pollster",
+ "raw-window-handle",
+ "smithay-client-toolkit",
+ "wgpu",
+ "x11rb",
+]
+
+[[package]]
+name = "mousewand-settings"
+version = "0.1.0"
+dependencies = [
+ "mousewand-core",
+ "serde",
+ "tauri",
+ "tauri-build",
+ "toml 1.2.1+spec-1.1.0",
+ "toml_edit 0.25.19+spec-1.1.0",
+]
+
+[[package]]
 name = "muda"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5599,86 +5679,6 @@ checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
 dependencies = [
  "cfg-if",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "wisp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "env_logger",
- "log",
- "notify",
- "signal-hook",
- "wisp-backend",
- "wisp-core",
- "wisp-input",
- "wisp-overlay",
- "zbus",
-]
-
-[[package]]
-name = "wisp-backend"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "log",
- "serde",
- "serde_json",
- "wayland-backend",
- "wayland-client",
- "wayland-protocols",
- "wayland-protocols-wlr",
- "wayland-scanner",
- "wisp-core",
- "x11rb",
- "zbus",
-]
-
-[[package]]
-name = "wisp-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "toml 1.2.1+spec-1.1.0",
-]
-
-[[package]]
-name = "wisp-input"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "evdev",
- "log",
- "notify",
- "wisp-core",
-]
-
-[[package]]
-name = "wisp-overlay"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytemuck",
- "log",
- "pollster",
- "raw-window-handle",
- "smithay-client-toolkit",
- "wgpu",
- "wisp-core",
- "x11rb",
-]
-
-[[package]]
-name = "wisp-settings"
-version = "0.1.0"
-dependencies = [
- "serde",
- "tauri",
- "tauri-build",
- "toml 1.2.1+spec-1.1.0",
- "toml_edit 0.25.19+spec-1.1.0",
- "wisp-core",
 ]
 
 [[package]]
