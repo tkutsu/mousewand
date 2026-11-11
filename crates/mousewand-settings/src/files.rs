@@ -7,8 +7,9 @@
 
 use std::path::{Path, PathBuf};
 
+use mousewand_core::config::{SETTINGS_CLASSES, toml_error};
 use mousewand_core::shape::Shape;
-use mousewand_core::{Config, Theme};
+use mousewand_core::{Config, Input, Theme};
 use serde::{Deserialize, Serialize};
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, value};
 
@@ -41,6 +42,16 @@ pub struct Settings {
     pub hold_ms: u64,
     pub min_segment: f64,
     pub theme: String,
+    /// The stroke or shape that opens this app.
+    pub open_settings: Drawn,
+}
+
+/// A stroke or a shape, as `open_settings` takes one.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Drawn {
+    /// "stroke" or "shape".
+    pub input: String,
+    pub value: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -69,10 +80,23 @@ pub struct State {
     pub global: Vec<Gesture>,
     /// The app for the window the settings gesture was drawn over, if any.
     pub app: Option<App>,
+    /// The gestures over this app's own window.
+    pub settings_app: App,
     pub themes: Vec<String>,
     /// The built-in shapes, then the drawn ones.
-    pub shapes: Vec<String>,
+    pub shapes: Vec<ShapeInfo>,
     pub presets: Vec<Preset>,
+}
+
+/// A shape as the shapes list shows it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShapeInfo {
+    pub name: String,
+    /// Built in, not drawn: there's no file to redraw or remove.
+    pub built_in: bool,
+    /// Its first example, about 1 across, for a thumbnail.
+    pub outline: Vec<[f64; 2]>,
 }
 
 pub struct Dir(pub PathBuf);
@@ -92,8 +116,13 @@ impl Dir {
 
     pub fn load(&self, class: Option<&str>) -> Result<State, String> {
         let main = read(&self.main_path())?;
-        let table: toml::Table = toml::from_str(&main).map_err(|e| format!("config.toml: {e}"))?;
+        let table: toml::Table = toml::from_str(&main).map_err(|e| toml_error("config.toml", &main, &e))?;
         let config = Config::parse(&main, &[], &toml_files(&self.0.join("shapes"))?)?;
+        let open_settings = match &config.open_settings {
+            Input::Shape(shape) => ("shape", shape.name.clone()),
+            Input::Stroke(stroke) => ("stroke", stroke.to_string()),
+            other => unreachable!("open_settings is a stroke or shape, not {other:?}"),
+        };
         let s = &config.settings;
         let settings = Settings {
             // By its usual name, so "side" shows as "back".
@@ -102,18 +131,36 @@ impl Dir {
             hold_ms: s.hold_ms,
             min_segment: s.min_segment,
             theme: s.theme.clone(),
+            open_settings: Drawn {
+                input: open_settings.0.into(),
+                value: open_settings.1,
+            },
         };
-        let app = match class.filter(|c| !c.is_empty()) {
+        let is_settings = |c: &str| SETTINGS_CLASSES.iter().any(|s| s.eq_ignore_ascii_case(c));
+        let app = match class.filter(|c| !c.is_empty() && !is_settings(c)) {
             Some(class) => Some(self.app_for(class)?),
             None => None,
         };
+        let mut settings_app = self.app_for(SETTINGS_CLASSES[0])?;
+        if settings_app.gestures.is_empty() && settings_app.classes.len() == 1 {
+            settings_app.classes = SETTINGS_CLASSES.map(String::from).to_vec();
+        }
         Ok(State {
             dir: self.0.display().to_string(),
             settings,
             global: gestures_of(&table)?,
             app,
+            settings_app,
             themes: self.themes(),
-            shapes: config.shapes.iter().map(|s| s.name.clone()).collect(),
+            shapes: config
+                .shapes
+                .iter()
+                .map(|s| ShapeInfo {
+                    name: s.name.clone(),
+                    built_in: !self.shape_path(&s.name).exists(),
+                    outline: s.outline().iter().map(|&(x, y)| [x, y]).collect(),
+                })
+                .collect(),
             presets: presets()?,
         })
     }
@@ -121,7 +168,8 @@ impl Dir {
     /// The app file whose `match` lists `class`, or a new one named after it.
     fn app_for(&self, class: &str) -> Result<App, String> {
         for (file, text) in self.app_files()? {
-            let table: toml::Table = toml::from_str(&text).map_err(|e| format!("apps/{file}.toml: {e}"))?;
+            let table: toml::Table =
+                toml::from_str(&text).map_err(|e| toml_error(&format!("apps/{file}.toml"), &text, &e))?;
             let classes = match table.get("match").and_then(|m| m.as_array()) {
                 Some(list) => list.iter().filter_map(|c| c.as_str().map(String::from)).collect(),
                 None => vec![file.clone()],
@@ -146,11 +194,16 @@ impl Dir {
     }
 
     /// Saves a drawn shape as `shapes/<name>.toml`, its points rounded to
-    /// whole pixels, and returns the name it got.
-    pub fn save_shape(&self, name: &str, examples: &[Vec<[f64; 2]>]) -> Result<String, String> {
-        let name = file_name(name.trim());
+    /// whole pixels, and returns the name it got. Only a `redraw` may
+    /// replace a shape that's there.
+    pub fn save_shape(&self, name: &str, examples: &[Vec<[f64; 2]>], redraw: bool) -> Result<String, String> {
+        let name = file_name(&name.trim().to_lowercase());
         if name.is_empty() {
-            return Err("the shape needs a name".into());
+            return Err("give the shape a name".into());
+        }
+        let taken = self.shape_path(&name).exists() || mousewand_core::shape::BUILT_IN.contains(&name.as_str());
+        if taken && !redraw {
+            return Err(format!("there's already a shape called {name}; pick another name"));
         }
         let examples: Vec<String> = examples
             .iter()
@@ -171,6 +224,25 @@ impl Dir {
         Ok(name)
     }
 
+    /// Removes `shapes/<name>.toml`, unless a saved gesture still uses it.
+    pub fn delete_shape(&self, name: &str) -> Result<(), String> {
+        let path = self.shape_path(name);
+        if !path.exists() {
+            return Err(format!("{name} is built in, so it can't be removed"));
+        }
+        let mut shapes = toml_files(&self.0.join("shapes"))?;
+        shapes.retain(|(stem, _)| stem != name);
+        let main = read(&self.main_path())?;
+        if let Err(e) = Config::parse(&main, &self.app_files()?, &shapes) {
+            let file = e.split([':', ',']).next().unwrap_or("a file");
+            return Err(match e.contains("no shape called") {
+                true => format!("{name} is still used by a gesture in {file}; change that gesture first"),
+                false => e,
+            });
+        }
+        std::fs::remove_file(&path).map_err(|e| format!("removing {}: {e}", path.display()))
+    }
+
     fn themes(&self) -> Vec<String> {
         let mut themes = vec!["default".to_string()];
         if let Ok(entries) = std::fs::read_dir(self.0.join("themes")) {
@@ -187,28 +259,31 @@ impl Dir {
 
     /// Writes the edits if the whole config, as the daemon would read it,
     /// still parses. Nothing is written otherwise.
-    pub fn save(&self, settings: &Settings, global: &[Gesture], app: Option<&App>) -> Result<(), String> {
+    pub fn save(&self, settings: &Settings, global: &[Gesture], edited: &[App]) -> Result<(), String> {
         let main = edit_main(&read(&self.main_path())?, settings, global)?;
         let mut apps = self.app_files()?;
-        let app_text = match app {
-            Some(app) => {
-                let path = self.app_path(&app.file);
-                let text = edit_app(&read(&path)?, app)?;
-                apps.retain(|(file, _)| file != &app.file);
-                apps.push((app.file.clone(), text.clone()));
-                Some((path, text))
+        let mut writes = Vec::new();
+        for app in edited {
+            let path = self.app_path(&app.file);
+            let old = read(&path)?;
+            // An app with nothing in it needs no file.
+            if old.is_empty() && app.gestures.is_empty() {
+                continue;
             }
-            None => None,
-        };
+            let text = edit_app(&old, app)?;
+            apps.retain(|(file, _)| file != &app.file);
+            apps.push((app.file.clone(), text.clone()));
+            writes.push((path, text));
+        }
         let config = Config::parse(&main, &apps, &toml_files(&self.0.join("shapes"))?)?;
         if config.settings.theme != "default" {
             let name = &config.settings.theme;
             let path = self.0.join("themes").join(format!("{name}.toml"));
             let text = std::fs::read_to_string(&path).map_err(|e| format!("theme {name:?}: {e}"))?;
-            Theme::parse(&text).map_err(|e| format!("themes/{name}.toml: {e}"))?;
+            Theme::parse(name, &text)?;
         }
         write(&self.main_path(), &main)?;
-        if let Some((path, text)) = app_text {
+        for (path, text) in writes {
             write(&path, &text)?;
         }
         Ok(())
@@ -325,6 +400,14 @@ fn edit_main(text: &str, settings: &Settings, global: &[Gesture]) -> Result<Stri
     doc["hold_ms"] = value(settings.hold_ms as i64);
     doc["min_segment"] = value(settings.min_segment);
     doc["theme"] = value(&settings.theme);
+    // The default stays unwritten, so the file only says what differs.
+    let open = &settings.open_settings;
+    let default = open.input == "shape" && open.value == "circle";
+    if !default || doc.contains_key("open_settings") {
+        let mut table = InlineTable::new();
+        table.insert(&open.input, open.value.as_str().into());
+        doc["open_settings"] = Item::Value(table.into());
+    }
     set_gestures(&mut doc, global);
     Ok(doc.to_string())
 }
@@ -473,7 +556,8 @@ mod tests {
             hold: Some("alt".into()),
             ..keys("7", "Tab")
         });
-        dir.save(&state.settings, &[keys("R", "b")], Some(&app)).unwrap();
+        dir.save(&state.settings, &[keys("R", "b")], std::slice::from_ref(&app))
+            .unwrap();
 
         let main = std::fs::read_to_string(path.join("config.toml")).unwrap();
         assert!(main.starts_with("# my settings"), "{main}");
@@ -503,40 +587,104 @@ mod tests {
     fn drawn_shapes_save_and_list() {
         let (dir, path) = dir("shapes");
         let triangle = vec![[0.0, 0.0], [100.4, 0.0], [50.0, 90.0], [0.0, 0.0]];
-        let name = dir.save_shape("my triangle", &[triangle.clone(), triangle]).unwrap();
+        let name = dir
+            .save_shape("My triangle", &[triangle.clone(), triangle.clone()], false)
+            .unwrap();
         assert_eq!(name, "my_triangle");
+        let again = dir.save_shape("my triangle", std::slice::from_ref(&triangle), false);
+        assert!(again.unwrap_err().contains("already a shape called my_triangle"));
+        assert!(
+            dir.save_shape("circle", std::slice::from_ref(&triangle), false)
+                .is_err()
+        );
+        dir.save_shape("my_triangle", &[triangle.clone(), triangle], true)
+            .unwrap();
         let text = std::fs::read_to_string(path.join("shapes/my_triangle.toml")).unwrap();
         assert!(text.contains("[100, 0]"), "{text}");
-        assert_eq!(dir.load(None).unwrap().shapes, ["circle", "my_triangle"]);
+        let shapes = dir.load(None).unwrap().shapes;
+        let names: Vec<_> = shapes.iter().map(|s| (s.name.as_str(), s.built_in)).collect();
+        assert_eq!(names, [("circle", true), ("my_triangle", false)]);
+        assert_eq!(shapes[1].outline.len(), 32);
 
         let gesture = Gesture {
             input: "shape".into(),
             ..keys("my_triangle", "ctrl+t")
         };
-        dir.save(&dir.load(None).unwrap().settings, std::slice::from_ref(&gesture), None)
+        dir.save(&dir.load(None).unwrap().settings, std::slice::from_ref(&gesture), &[])
             .unwrap();
         assert_eq!(dir.load(None).unwrap().global, [gesture]);
 
-        assert!(dir.save_shape("dot", &[vec![[5.0, 5.0], [5.0, 5.0]]]).is_err());
-        assert!(dir.save_shape(" ", &[vec![[0.0, 0.0], [9.0, 9.0]]]).is_err());
+        assert!(dir.save_shape("dot", &[vec![[5.0, 5.0], [5.0, 5.0]]], false).is_err());
+        assert!(dir.save_shape(" ", &[vec![[0.0, 0.0], [9.0, 9.0]]], false).is_err());
         assert!(!path.join("shapes/dot.toml").exists());
+
+        // In use, then not.
+        let used = dir.delete_shape("my_triangle").unwrap_err();
+        assert_eq!(
+            used,
+            "my_triangle is still used by a gesture in config.toml; change that gesture first"
+        );
+        dir.save(&dir.load(None).unwrap().settings, &[], &[]).unwrap();
+        dir.delete_shape("my_triangle").unwrap();
+        assert!(!path.join("shapes/my_triangle.toml").exists());
+        assert!(dir.delete_shape("circle").unwrap_err().contains("built in"));
+    }
+
+    #[test]
+    fn open_settings_and_the_settings_window() {
+        let (dir, path) = dir("open-settings");
+        let state = dir.load(Some("io.github.tkutsu.mousewand")).unwrap();
+        assert!(state.app.is_none(), "the settings window has its own tab");
+        assert_eq!(
+            state.settings.open_settings,
+            Drawn {
+                input: "shape".into(),
+                value: "circle".into()
+            }
+        );
+        let mut settings_app = state.settings_app.clone();
+        assert_eq!(settings_app.classes, SETTINGS_CLASSES);
+
+        // Nothing to save: no settings app file, and the default isn't written.
+        dir.save(&state.settings, &[], std::slice::from_ref(&settings_app))
+            .unwrap();
+        assert!(!path.join("apps/mousewand-settings.toml").exists());
+        let main = std::fs::read_to_string(path.join("config.toml")).unwrap();
+        assert!(!main.contains("open_settings"), "{main}");
+
+        let mut settings = state.settings.clone();
+        settings.open_settings = Drawn {
+            input: "stroke".into(),
+            value: "U39D".into(),
+        };
+        settings_app.gestures.push(Gesture {
+            name: Some("Save".into()),
+            ..keys("39", "ctrl+s")
+        });
+        dir.save(&settings, &[], &[settings_app]).unwrap();
+        let again = dir.load(None).unwrap();
+        assert_eq!(again.settings.open_settings, settings.open_settings);
+        assert_eq!(again.settings_app.gestures[0].target, "ctrl+s");
+        assert_eq!(again.settings_app.classes, SETTINGS_CLASSES);
     }
 
     #[test]
     fn invalid_saves_write_nothing() {
         let (dir, path) = dir("invalid");
         let state = dir.load(Some("kitty")).unwrap();
-        let app = state.app.unwrap();
+        let mut app = state.app.unwrap();
         assert_eq!(app.file, "kitty");
-        let bad = dir.save(&state.settings, &[keys("L", "ctrl+nope")], Some(&app));
+        app.gestures.push(keys("R", "ctrl+Tab"));
+        let bad = dir.save(&state.settings, &[keys("L", "ctrl+nope")], std::slice::from_ref(&app));
         assert!(bad.unwrap_err().contains("nope"));
         assert!(!path.join("config.toml").exists());
 
         let mut settings = state.settings.clone();
         settings.theme = "missing".into();
-        assert!(dir.save(&settings, &[], None).is_err());
+        assert!(dir.save(&settings, &[], &[]).is_err());
 
-        dir.save(&state.settings, &[keys("L", "alt+Left")], Some(&app)).unwrap();
+        dir.save(&state.settings, &[keys("L", "alt+Left")], std::slice::from_ref(&app))
+            .unwrap();
         let kitty = std::fs::read_to_string(path.join("apps/kitty.toml")).unwrap();
         assert!(
             !kitty.contains("match"),

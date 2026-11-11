@@ -117,6 +117,7 @@ hold_ms = 300        # holding still this long makes it a normal press
 min_segment = 30     # shorter strokes are ignored as noise
 devices = []         # only use mice whose name contains one of these
 theme = "default"    # or a file in themes/, without .toml
+open_settings = { shape = "circle" }   # or a stroke: { stroke = "U39D" }
 ```
 
 ### Actions
@@ -154,7 +155,7 @@ Any gesture can have a `name`, which hints show. Without one, they show its keys
 
 A shape matches by how the drawing looks, not by its directions. A circle counts whether it's round or squashed, tilted, drawn either way round, or not quite closed.
 
-`circle` is built in, and opens the settings app unless you give it a gesture of your own. To add other shapes, draw them three times in the settings app, which saves them as `shapes/<name>.toml`.
+`circle` is built in, and opens the settings app unless you give it a gesture of your own or pick another one with `open_settings`. To add other shapes, draw them five times in the settings app, which turns away a drawing that doesn't look like the others and saves the shape as `shapes/<name>.toml`. Its General page lists every shape, to redraw or remove.
 
 ```toml
 [[gesture]]
@@ -233,7 +234,9 @@ glow = 0.9            # 0 is a plain line
 
 ## Settings app
 
-Draw a circle over any window to open the settings app on that app's gestures. It has presets for common apps, a pad for drawing new shapes, a Record button that captures a shortcut as you press it, a Detect button that finds your trigger as you press it, and an Everywhere tab for the trigger, theme and global gestures. It edits the same files, keeps your comments, and won't save anything mousewand would reject.
+Draw a circle over any window to open the settings app on that app's gestures. It has pages for General, Every App and the current app, which it opens on. It has presets for common apps, a pad for teaching it new shapes, a Record button that captures a shortcut as you press it, and a Detect button that finds your trigger as you press it. It edits the same files, keeps your comments, checks each gesture as you edit it, and won't save anything mousewand would reject. Only one settings window opens; drawing the circle again brings it to the front.
+
+Its General page picks what opens it, and gives its own window gestures for Save, Close, New gesture and switching pages. They press the window's shortcuts, which work from the keyboard too: Ctrl+S, Ctrl+W, Ctrl+N, and Ctrl+Tab or Ctrl+Shift+Tab. Over the settings window, the gesture that opens it does nothing.
 
 It's a Tauri app, so it needs WebKitGTK (`webkit2gtk-4.1`), Node and pnpm to build:
 
@@ -267,7 +270,7 @@ Most answers are in the log: `journalctl --user -u mousewand -f`, or run `mousew
 
 **My mouse settings stopped applying.** Your compositor now sees one virtual mouse, "mousewand virtual mouse". Apply per-device settings, like a custom acceleration profile, to it instead.
 
-**"unknown field `kind`", `hold` or `rocker`.** The gesture format changed: `kind = "repeat"` is now `repeat = true`, `hold` goes in the action (`action = { keys = "Tab", hold = "alt" }`), and `rocker` is now `click`.
+**"there's no `kind` here", or `hold` or `rocker`.** The gesture format changed: `kind = "repeat"` is now `repeat = true`, `hold` goes in the action (`action = { keys = "Tab", hold = "alt" }`), and `rocker` is now `click`.
 
 **Keys come out wrong.** `keys` uses US key positions. On another layout, write the key that sits in the same place on a US keyboard.
 
