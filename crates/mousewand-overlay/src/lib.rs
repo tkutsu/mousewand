@@ -288,12 +288,7 @@ impl State {
         };
         let scale = active.scale.max(1) as u32;
         let hint = active.hint_image.as_ref().map(|image| {
-            let (x, y) = hint::place(
-                &self.hint_style,
-                (image.width, image.height),
-                (w * scale, h * scale),
-                scale as f32,
-            );
+            let (x, y) = hint::place(&self.hint_style, image, (w * scale, h * scale), scale as f32);
             Quad {
                 image,
                 x,

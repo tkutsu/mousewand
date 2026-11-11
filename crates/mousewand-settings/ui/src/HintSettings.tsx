@@ -160,44 +160,52 @@ function Arrow({ angle, size, color }: { angle: number; size: number; color: str
 
 const ANGLES: Record<string, number> = { R: 0, D: 90, L: 180, U: 270 };
 
-/** A mock screen with the hint for a stroke that's half drawn. */
+const PADDING = 14;
+/** The mock screen's margin, smaller than the real 64 px. */
+const MARGIN = 20;
+
+/**
+ * A mock screen with the hint for a stroke that's half drawn. As on screen,
+ * the main line goes where the position says, and the next moves hang off
+ * it: above at the bottom, below elsewhere.
+ */
 function Preview({ hint }: { hint: Hint }) {
   const size = hint.size;
   const small = size * 0.82;
-  const rows: { stroke: string; label: string; size: number; arrow: string; text: string }[] = [
-    { stroke: "D", label: "Reload", size, arrow: dim(hint.glyph, 1), text: dim(hint.text, 0.75) },
-    ...(hint.next
-      ? [
-          { stroke: "R", label: "Close tab" },
-          { stroke: "RU", label: "Reopen closed tab" },
-        ].map((r) => ({ ...r, size: small, arrow: dim(hint.glyph, 0.85), text: dim(hint.text, 0.7) }))
-      : []),
-  ];
-  // Next moves line their labels up after the longest stroke.
-  const nextArrows = Math.max(0, ...rows.slice(1).map((r) => r.stroke.length * r.size * 1.05));
+  const main = { stroke: "D", label: "Reload", size, arrow: dim(hint.glyph, 1), text: dim(hint.text, 0.75), next: false };
+  const next = hint.next
+    ? [
+        { stroke: "R", label: "Close tab" },
+        { stroke: "RU", label: "Reopen closed tab" },
+      ].map((r) => ({ ...r, size: small, arrow: dim(hint.glyph, 0.85), text: dim(hint.text, 0.7), next: true }))
+    : [];
   const [v, h] = cell(hint.position);
-  const align = ["start", "center", "end"] as const;
-  const screen: CSSProperties = {
-    alignItems: align[h],
-    justifyContent: align[v],
-    fontFamily: hint.font,
+  const above = v === 2;
+  const rows = above ? [...next, main] : [main, ...next];
+  // Next moves line their labels up after the longest stroke.
+  const nextArrows = Math.max(0, ...next.map((r) => r.stroke.length * r.size * 1.05));
+  // The panel the main line alone would make, placed like the real one.
+  const mainHeight = size * 1.45 + PADDING * 2;
+  const panel: CSSProperties = {
+    background: hint.background,
+    borderRadius: hint.radius,
+    padding: PADDING,
+    ...[{ left: MARGIN }, { left: "50%", translate: "-50% 0" }, { right: MARGIN }][h],
+    ...[{ top: MARGIN }, { top: `calc(50% - ${mainHeight / 2}px)` }, { bottom: MARGIN }][v],
   };
   return (
     <div
-      className="flex h-56 flex-col overflow-hidden rounded-lg border border-line bg-gradient-to-br from-[#5b7fa8] via-[#8a76a6] to-[#d29a7a] p-5"
-      style={screen}
+      className="relative h-56 overflow-hidden rounded-lg border border-line bg-gradient-to-br from-[#5b7fa8] via-[#8a76a6] to-[#d29a7a]"
+      style={{ fontFamily: hint.font }}
     >
-      <div
-        className="flex flex-col opacity-90"
-        style={{ background: hint.background, borderRadius: hint.radius, padding: 14 }}
-      >
+      <div className="absolute flex flex-col opacity-90" style={panel}>
         {rows.map((row, i) => (
           <div
             key={row.stroke}
             className="flex items-center whitespace-nowrap"
-            style={{ height: row.size * 1.45, marginTop: i === 1 ? size * 0.35 : 0 }}
+            style={{ height: row.size * 1.45, marginTop: i > 0 && row.next !== rows[i - 1].next ? size * 0.35 : 0 }}
           >
-            <div className="flex" style={{ width: i > 0 ? nextArrows : undefined }}>
+            <div className="flex" style={{ width: row.next ? nextArrows : undefined }}>
               {[...row.stroke].map((d, j) => (
                 <Arrow key={j} angle={ANGLES[d]} size={row.size} color={row.arrow} />
               ))}

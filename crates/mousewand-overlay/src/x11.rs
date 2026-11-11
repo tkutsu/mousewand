@@ -267,12 +267,8 @@ impl Window {
         match scene.strips(size, &self.theme, |c| target.color(c)) {
             Some(strips) => {
                 let hint = self.hint.as_ref().map(|image| {
-                    let (x, y) = hint::place(
-                        &self.hint_style,
-                        (image.width, image.height),
-                        (self.size.0.into(), self.size.1.into()),
-                        1.0,
-                    );
+                    let screen = (self.size.0.into(), self.size.1.into());
+                    let (x, y) = hint::place(&self.hint_style, image, screen, 1.0);
                     Quad {
                         image,
                         x,
