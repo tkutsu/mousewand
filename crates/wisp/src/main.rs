@@ -22,7 +22,10 @@ enum Msg {
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+    // zbus logs every call at info; wgpu logs the GL drivers it probes and
+    // skips as errors.
+    let filter = "info,zbus=warn,tracing=warn,wgpu_hal::gles=off";
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(filter))
         .format_timestamp_millis()
         .init();
 

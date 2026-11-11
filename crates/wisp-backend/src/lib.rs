@@ -2,9 +2,11 @@
 //! gets its own implementation.
 
 mod hyprland;
+mod kwin;
 mod sway;
 
 pub use hyprland::Hyprland;
+pub use kwin::KWin;
 pub use sway::Sway;
 
 #[derive(Clone, PartialEq, Debug, Default)]
@@ -42,7 +44,8 @@ pub fn detect() -> anyhow::Result<Box<dyn Backend>> {
     match std::env::var("WISP_BACKEND").ok().as_deref() {
         Some("hyprland") => return Ok(Box::new(Hyprland::connect()?)),
         Some("sway") => return Ok(Box::new(Sway::connect()?)),
-        Some(other) => anyhow::bail!("unknown WISP_BACKEND {other:?}: use hyprland or sway"),
+        Some("kwin") => return Ok(Box::new(KWin::connect()?)),
+        Some(other) => anyhow::bail!("unknown WISP_BACKEND {other:?}: use hyprland, sway or kwin"),
         None => {}
     }
     if hyprland::find_socket().is_ok_and(|s| answers(&s)) {
@@ -51,7 +54,10 @@ pub fn detect() -> anyhow::Result<Box<dyn Backend>> {
     if sway::find_socket().is_some_and(|s| answers(&s)) {
         return Ok(Box::new(Sway::connect()?));
     }
-    anyhow::bail!("no supported compositor found (Hyprland or sway)")
+    if kwin::running() {
+        return Ok(Box::new(KWin::connect()?));
+    }
+    anyhow::bail!("no supported compositor found (Hyprland, sway or KWin)")
 }
 
 /// A socket file can outlive its compositor.

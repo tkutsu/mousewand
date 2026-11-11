@@ -126,12 +126,14 @@ fn run(action: Action, active: &mut Active, backend: &dyn Backend, input: &Input
     match action {
         Action::Keys(combo) => focus(active, backend).map(|()| input.type_combo(combo)),
         Action::Command(command) => spawn(&command, &active.window),
-        Action::Dispatch(command) => backend.dispatch(&command),
+        // Dispatchers act on the active window, so it must be this one too.
+        Action::Dispatch(command) => focus(active, backend).and_then(|()| backend.dispatch(&command)),
     }
 }
 
-/// Keys must reach the window the gesture was drawn over, even if another
-/// window has focus. Focuses once per gesture, not on every repeat.
+/// Keys and dispatchers must reach the window the gesture was drawn over,
+/// even if another window has focus. Focuses once per gesture, not on every
+/// repeat.
 fn focus(active: &mut Active, backend: &dyn Backend) -> anyhow::Result<()> {
     if !active.focused && !active.window.id.is_empty() {
         backend.focus(&active.window)?;
