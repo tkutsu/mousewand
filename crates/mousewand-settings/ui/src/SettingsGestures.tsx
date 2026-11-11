@@ -69,7 +69,7 @@ export default function SettingsGestures({ settings, app, shapes, onSettings, on
   const open = settings.openSettings;
   return (
     <Section
-      title="mousewand App"
+      title="Mousewand App"
       action={
         <button className="button plain h-6 px-2 text-accent" onClick={suggest}>
           Use Suggested
