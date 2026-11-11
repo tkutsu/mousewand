@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 use std::thread;
 
 use anyhow::Context;
-use wisp_backend::{Backend, Point, Window};
+use wisp_backend::{Backend, Target, Window};
 use wisp_core::{Action, Config, Fire, Output, Session};
 use wisp_input::Input;
 use wisp_overlay::Overlay;
@@ -72,12 +72,15 @@ impl Daemon {
         }
     }
 
+    /// Over the desktop, or when the lookup fails, the window has no id or
+    /// class: it still gets the global gestures.
     fn begin(&mut self) {
-        let backend = self.backend.as_ref();
-        let cursor = backend.cursor();
-        let monitor = cursor.as_ref().ok().and_then(|&p| monitor_at(backend, p));
-        self.overlay(|o| o.begin(monitor));
-        let window = window_at(self.backend.as_ref(), cursor);
+        let target = self.backend.pointer_target().unwrap_or_else(|e| {
+            log::warn!("can't find the window under the cursor: {e:#}");
+            Target::default()
+        });
+        self.overlay(|o| o.begin(target.monitor));
+        let window = target.window.unwrap_or_default();
         log::debug!("gesture over {:?}", window.class);
         self.active = Some(Active {
             session: Session::new(self.config.gestures_for(&window.class)),
@@ -135,30 +138,6 @@ fn focus(active: &mut Active, backend: &dyn Backend) -> anyhow::Result<()> {
     }
     active.focused = true;
     Ok(())
-}
-
-fn monitor_at(backend: &dyn Backend, p: Point) -> Option<String> {
-    let monitors = backend
-        .monitors()
-        .inspect_err(|e| log::warn!("can't list monitors: {e:#}"))
-        .ok()?;
-    monitors.into_iter().find(|m| m.contains(p)).map(|m| m.name)
-}
-
-/// The window at the cursor. Over the desktop, or when the lookup fails,
-/// a window without an id or class: it still gets the global gestures.
-fn window_at(backend: &dyn Backend, cursor: anyhow::Result<Point>) -> Window {
-    let found = cursor.and_then(|p| backend.window_at(p));
-    found
-        .unwrap_or_else(|e| {
-            log::warn!("can't find the window under the cursor: {e:#}");
-            None
-        })
-        .unwrap_or(Window {
-            id: String::new(),
-            class: String::new(),
-            title: String::new(),
-        })
 }
 
 /// Runs a shell command without waiting for it. It sees the window in

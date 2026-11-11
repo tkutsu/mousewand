@@ -2,17 +2,12 @@
 //! gets its own implementation.
 
 mod hyprland;
+mod sway;
 
 pub use hyprland::Hyprland;
+pub use sway::Sway;
 
-/// A point in the compositor's global, logical coordinates.
-#[derive(Clone, Copy, PartialEq, Debug, Default)]
-pub struct Point {
-    pub x: f64,
-    pub y: f64,
-}
-
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Default)]
 pub struct Window {
     /// The compositor's handle for the window, e.g. a Hyprland address.
     pub id: String,
@@ -20,34 +15,46 @@ pub struct Window {
     pub title: String,
 }
 
-#[derive(Clone, PartialEq, Debug)]
-pub struct Monitor {
-    /// The connector name, the same as `wl_output.name`.
-    pub name: String,
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-
-impl Monitor {
-    pub fn contains(&self, p: Point) -> bool {
-        p.x >= self.x && p.x < self.x + self.width && p.y >= self.y && p.y < self.y + self.height
-    }
+/// Where a gesture starts.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct Target {
+    /// The window under the cursor; `None` over the desktop.
+    pub window: Option<Window>,
+    /// The monitor under the cursor, by connector name (the same as
+    /// `wl_output.name`), if the compositor says.
+    pub monitor: Option<String>,
 }
 
 pub trait Backend: Send {
-    fn cursor(&self) -> anyhow::Result<Point>;
-    /// The topmost window at a point, if any.
-    fn window_at(&self, p: Point) -> anyhow::Result<Option<Window>>;
+    /// The window and monitor under the cursor.
+    fn pointer_target(&self) -> anyhow::Result<Target>;
     /// Gives a window keyboard focus.
-    fn focus(&self, w: &Window) -> anyhow::Result<()>;
-    fn monitors(&self) -> anyhow::Result<Vec<Monitor>>;
+    fn focus(&self, window: &Window) -> anyhow::Result<()>;
     /// Runs a compositor command, written the compositor's way.
     fn dispatch(&self, command: &str) -> anyhow::Result<()>;
 }
 
-/// Picks the backend for the running compositor.
+/// Picks the backend for the running compositor: `$WISP_BACKEND` if set
+/// (hyprland or sway), else whichever compositor's socket answers. Sockets
+/// are found without the compositor's environment, so this works from a
+/// service started before the compositor exported it.
 pub fn detect() -> anyhow::Result<Box<dyn Backend>> {
-    Ok(Box::new(Hyprland::connect()?))
+    match std::env::var("WISP_BACKEND").ok().as_deref() {
+        Some("hyprland") => return Ok(Box::new(Hyprland::connect()?)),
+        Some("sway") => return Ok(Box::new(Sway::connect()?)),
+        Some(other) => anyhow::bail!("unknown WISP_BACKEND {other:?}: use hyprland or sway"),
+        None => {}
+    }
+    if hyprland::find_socket().is_ok_and(|s| answers(&s)) {
+        return Ok(Box::new(Hyprland::connect()?));
+    }
+    if sway::find_socket().is_some_and(|s| answers(&s)) {
+        return Ok(Box::new(Sway::connect()?));
+    }
+    anyhow::bail!("no supported compositor found (Hyprland or sway)")
+}
+
+/// A socket file can outlive its compositor.
+fn answers(socket: &std::path::Path) -> bool {
+    std::os::unix::net::UnixStream::connect(socket).is_ok()
 }
