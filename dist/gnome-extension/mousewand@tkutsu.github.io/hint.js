@@ -17,6 +17,7 @@ const DEFAULT_STYLE = {
     size: 17,
     text: [0.95, 0.95, 0.97, 1],
     glyph: [0.62, 0.77, 1, 1],
+    failed: [1, 0.35, 0.35, 1],
     background: [0.11, 0.12, 0.15, 1],
     opacity: 0.9,
     padding: 14,
@@ -38,16 +39,16 @@ export class Hint {
     }
 
     // `hint`: {stroke, label, state: 'drawing' | 'fired' | 'missed', next: [[rest, label]]}.
-    show(hint, rejected) {
+    show(hint) {
         const s = this._style;
         if (!s.enabled)
             return;
         this.destroy();
-        // A miss shows only its arrows, in the trail's rejected color.
+        // A miss shows only its arrows, in the failed color.
         const [arrow, text, label] = {
             drawing: [css(s.glyph), css(s.text, 0.75), hint.label],
             fired: [css(s.glyph), css(s.text), hint.label],
-            missed: [css([...rejected, 1]), css(s.text), null],
+            missed: [css(s.failed), css(s.failed), null],
         }[hint.state];
         const main = hint.stroke || label
             ? {arrows: arrows(hint.stroke), label, size: s.size, arrow, text}

@@ -63,6 +63,7 @@ font = "sans-serif"          # any installed font family, e.g. "Inter"
 size = 17                    # text size, px; arrows match it
 text = "#f2f2f7"
 glyph = "#9ec4ff"            # the arrows
+failed = "#ff5959"           # arrows once the stroke matches nothing
 background = "#1c1e26"       # "#rrggbbaa" for a see-through background
 opacity = 0.9                # of the whole hint
 padding = 14

@@ -250,7 +250,7 @@ impl Window {
             Command::HintStyle(style) => self.hint_style = style,
             Command::Hint(hint) => {
                 if self.scene.is_some() && self.hint_style.enabled {
-                    self.hint = self.painter.paint(&hint, &self.hint_style, self.theme.rejected, 1.0);
+                    self.hint = self.painter.paint(&hint, &self.hint_style, 1.0);
                 }
             }
         }

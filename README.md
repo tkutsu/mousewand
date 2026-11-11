@@ -168,6 +168,7 @@ font = "sans-serif"          # any installed font family
 size = 17                    # text size in pixels
 text = "#f2f2f7"
 glyph = "#9ec4ff"            # the arrows
+failed = "#ff5959"           # arrows once the stroke matches nothing
 background = "#1c1e26"       # "#rrggbbaa" for a see-through background
 opacity = 0.9
 padding = 14

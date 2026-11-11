@@ -466,6 +466,9 @@ pub struct HintStyle {
     /// The arrows.
     #[serde(deserialize_with = "parsed")]
     pub glyph: Rgba,
+    /// The arrows and text once the stroke matches nothing.
+    #[serde(deserialize_with = "parsed")]
+    pub failed: Rgba,
     #[serde(deserialize_with = "parsed")]
     pub background: Rgba,
     /// Of the whole hint, 0 to 1.
@@ -485,6 +488,7 @@ impl Default for HintStyle {
             size: 17.0,
             text: Rgba([0.95, 0.95, 0.97, 1.0]),
             glyph: Rgba([0.62, 0.77, 1.0, 1.0]),
+            failed: Rgba([1.0, 0.35, 0.35, 1.0]),
             background: Rgba([0.11, 0.12, 0.15, 1.0]),
             opacity: 0.9,
             padding: 14.0,

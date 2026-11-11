@@ -37,6 +37,8 @@ export type Hint = {
   size: number;
   text: string;
   glyph: string;
+  /** The arrows and text once the stroke matches nothing. */
+  failed: string;
   background: string;
   radius: number;
 };
