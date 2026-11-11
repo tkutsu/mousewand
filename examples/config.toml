@@ -4,6 +4,7 @@
 trigger = "middle"     # middle, back (mouse 4), forward (mouse 5); the settings app can detect it
 threshold = 8          # motion before a press becomes a gesture (≈ px)
 hold_ms = 300          # holding still this long makes it a normal press
+cancel_ms = 700        # holding still this long mid-stroke cancels it; 0 never does
 min_segment = 30       # shorter strokes are ignored as noise
 devices = []           # only grab mice whose name contains one of these
 theme = "default"      # or a file in themes/, without .toml
@@ -17,7 +18,23 @@ stroke = "UD"
 name = "Say hello"
 action = { command = "notify-send mousewand \"gesture over $MOUSEWAND_CLASS\"" }
 
+# An action can be a list of steps, run in turn: copy the selection,
+# give the app a moment, then search the web for it.
+[[gesture]]
+stroke = "UR"
+name = "Search for the selection"
+action = [{ keys = "ctrl+c" }, { wait = 150 }, { command = 'xdg-open "https://duckduckgo.com/?q=$(wl-paste | jq -sRr @uri)"' }]
+
+# With a modifier held on the keyboard, the same stroke can do something
+# else. It needs dist/71-mousewand-keyboard.rules; see the README.
+# [[gesture]]
+# stroke = "UR"
+# with = "shift"
+# name = "Open the selection"
+# action = { command = 'xdg-open "$(wl-paste --primary)"' }
+
 # Trigger + wheel: volume.
+
 [[gesture]]
 wheel = "up"
 name = "Volume up"

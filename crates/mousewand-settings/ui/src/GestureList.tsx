@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { newGesture, type Gesture, type ShapeInfo } from "./api";
+import { MODIFIERS, menuLabel, type Group } from "./actions";
+import { newGesture, newStep, type Gesture, type ShapeInfo, type Step } from "./api";
 import { problems } from "./check";
 import { ShapeSelect, StrokeInput } from "./Drawn";
 import { arrows, comboOf } from "./keys";
 import ShapePad from "./ShapePad";
-import { Problem, Section, ShapeThumb } from "./ui";
+import { Problem, Section, ShapeThumb, Toggles } from "./ui";
 
 type Props = {
   title: string;
@@ -12,12 +13,16 @@ type Props = {
   gestures: Gesture[];
   /** The shapes a gesture can use. */
   shapes: ShapeInfo[];
+  /** Ready-made actions to offer, by group. */
+  readyMade: Group[];
+  /** Whether mousewand can see which modifiers are held. */
+  keyboard: boolean;
   onChange: (gestures: Gesture[]) => void;
   /** A shape was drawn and saved. */
   onNewShape: (name: string) => void;
 };
 
-export default function GestureList({ title, note, gestures, shapes, onChange, onNewShape }: Props) {
+export default function GestureList({ title, note, gestures, onChange, ...rest }: Props) {
   const update = (i: number, patch: Partial<Gesture>) =>
     onChange(gestures.map((g, j) => (j === i ? { ...g, ...patch } : g)));
   const remove = (i: number) => onChange(gestures.filter((_, j) => j !== i));
@@ -39,33 +44,38 @@ export default function GestureList({ title, note, gestures, shapes, onChange, o
           key={i}
           gesture={g}
           problem={found[i]}
-          shapes={shapes}
           onChange={(patch) => update(i, patch)}
-          onNewShape={onNewShape}
           onRemove={() => remove(i)}
+          {...rest}
         />
       ))}
     </Section>
   );
 }
 
-function Row({
-  gesture: g,
-  problem,
-  shapes,
-  onChange,
-  onNewShape,
-  onRemove,
-}: {
+type RowProps = Omit<Props, "title" | "note" | "gestures" | "onChange"> & {
   gesture: Gesture;
   problem: string | null;
-  shapes: ShapeInfo[];
   onChange: (patch: Partial<Gesture>) => void;
-  onNewShape: (name: string) => void;
   onRemove: () => void;
-}) {
+};
+
+function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNewShape, onRemove }: RowProps) {
   const [drawing, setDrawing] = useState(false);
   const continuous = g.input === "stroke" && g.kind !== "oneshot";
+  // Held modifiers would mix into keys typed while they're down, so only
+  // gestures that fire on release can use them.
+  const canHoldKeys = (g.input === "stroke" || g.input === "shape") && !continuous;
+  const held = g.with ? g.with.split("+") : [];
+
+  const setStep = (i: number, step: Step) => onChange({ steps: g.steps.map((s, j) => (j === i ? step : s)) });
+  const pickReadyMade = (i: number, group: number, index: number) => {
+    const action = readyMade[group].actions[index];
+    const steps = g.steps.map((s, j) => (j === i ? { ...action.step } : s));
+    // A fresh gesture takes the action's name; a named one keeps its own.
+    onChange(!g.name && g.steps.length === 1 ? { steps, name: action.name } : { steps });
+  };
+
   return (
     <div className="group flex flex-col gap-2 px-4 pt-2.5 pb-3">
       <div className="flex items-center gap-3">
@@ -94,7 +104,8 @@ function Row({
           onChange={(e) => {
             const input = e.target.value as Gesture["input"];
             const value = { stroke: "", shape: shapes[0]?.name ?? "circle", wheel: "up", click: "right" }[input];
-            onChange({ input, value, kind: "oneshot", step: null, hold: null });
+            const keepWith = input === "stroke" || input === "shape";
+            onChange({ input, value, kind: "oneshot", step: null, hold: null, with: keepWith ? g.with : null });
             setDrawing(false);
           }}
         >
@@ -135,7 +146,12 @@ function Row({
             value={g.kind}
             onChange={(e) => {
               const kind = e.target.value as Gesture["kind"];
-              onChange({ kind, hold: kind === "hold" ? (g.hold ?? "alt") : null });
+              onChange({
+                kind,
+                hold: kind === "hold" ? (g.hold ?? "alt") : null,
+                with: kind === "oneshot" ? g.with : null,
+                steps: kind === "hold" ? [g.steps.find((s) => s.action === "keys") ?? newStep()] : g.steps,
+              });
             }}
           >
             <option value="oneshot">Fires on Release</option>
@@ -156,7 +172,29 @@ function Row({
             px
           </span>
         )}
+        {canHoldKeys && (
+          <span className="ml-auto flex items-center gap-2" title="Only while these keys are held on the keyboard">
+            <span className="text-[12px] text-ink-3">holding</span>
+            <Toggles
+              values={held}
+              options={MODIFIERS.map((m) => ({ key: m.key, label: m.label }))}
+              onChange={(keys) => {
+                // Combos name them in a set order: ctrl, shift, alt, super.
+                const ordered = MODIFIERS.map((m) => m.key).filter((k) => keys.includes(k));
+                onChange({ with: ordered.length ? ordered.join("+") : null });
+              }}
+            />
+          </span>
+        )}
       </Line>
+      {g.with && !keyboard && (
+        <div className="pl-[4.5rem]">
+          <Problem>
+            mousewand can't read the keyboard yet, so this won't fire. The README's Modifiers section shows how to
+            allow it.
+          </Problem>
+        </div>
+      )}
 
       {g.input === "stroke" && g.kind === "hold" && (
         <Line label="Hold">
@@ -166,32 +204,45 @@ function Row({
         </Line>
       )}
 
-      <Line label="Do">
-        <select
-          className="field"
-          value={g.action}
-          onChange={(e) => onChange({ action: e.target.value as Gesture["action"] })}
-        >
-          <option value="keys">Press Keys</option>
-          <option value="command">Run Command</option>
-          <option value="dispatch">Hyprland Dispatch</option>
-        </select>
-        <div className="min-w-44 flex-1">
-          {g.action === "keys" ? (
-            <KeysInput value={g.target} onChange={(target) => onChange({ target })} />
-          ) : (
-            <input
-              className="field w-full font-mono"
-              value={g.target}
-              placeholder={g.action === "command" ? "notify-send hi" : 'hl.dsp.focus({ workspace = "e+1" })'}
-              onChange={(e) => onChange({ target: e.target.value })}
-            />
+      {g.steps.map((step, i) => (
+        <Line key={i} label={i === 0 ? "Do" : "Then"}>
+          <StepEditor
+            step={step}
+            readyMade={readyMade}
+            keysOnly={g.kind === "hold"}
+            onChange={(next) => setStep(i, next)}
+            onReadyMade={(group, index) => pickReadyMade(i, group, index)}
+          />
+          {g.steps.length > 1 && (
+            <button
+              className="button plain w-7 px-0 text-ink-3 hover:text-danger"
+              onClick={() => onChange({ steps: g.steps.filter((_, j) => j !== i) })}
+              title="Remove this step"
+              aria-label="Remove this step"
+            >
+              −
+            </button>
           )}
+        </Line>
+      ))}
+      {g.kind !== "hold" && (
+        <div
+          className={`pl-[4.5rem] ${
+            g.steps.length > 1 ? "" : "-my-1 hidden group-focus-within:block group-hover:block"
+          }`}
+        >
+          <button
+            className="button plain -ml-2 h-6 px-2 text-[12px] text-accent"
+            title="Do something else after this, in turn"
+            onClick={() => onChange({ steps: [...g.steps, newStep()] })}
+          >
+            + Add Step
+          </button>
         </div>
-      </Line>
+      )}
 
       {problem && (
-        <div className="pl-14">
+        <div className="pl-[4.5rem]">
           <Problem>{problem}</Problem>
         </div>
       )}
@@ -209,11 +260,85 @@ function Row({
   );
 }
 
+/** One step: what kind, and its keys, command or wait. Ready-made actions live in the same menu. */
+function StepEditor({
+  step,
+  readyMade,
+  keysOnly,
+  onChange,
+  onReadyMade,
+}: {
+  step: Step;
+  readyMade: Group[];
+  keysOnly: boolean;
+  onChange: (step: Step) => void;
+  onReadyMade: (group: number, index: number) => void;
+}) {
+  return (
+    <>
+      <select
+        className="field w-36"
+        value={step.action}
+        onChange={(e) => {
+          const [kind, group, index] = e.target.value.split(":");
+          if (kind === "ready") return onReadyMade(Number(group), Number(index));
+          const action = kind as Step["action"];
+          onChange({ action, target: action === "wait" ? "200" : action === step.action ? step.target : "" });
+        }}
+      >
+        <option value="keys">Press Keys</option>
+        {!keysOnly && (
+          <>
+            <option value="command">Run Command</option>
+            <option value="dispatch">Compositor</option>
+            <option value="wait">Wait</option>
+          </>
+        )}
+        {readyMade.map((group, g) => (
+          <optgroup key={group.title} label={group.title}>
+            {group.actions
+              .map((action, i) => ({ action, i }))
+              .filter(({ action }) => !keysOnly || action.step.action === "keys")
+              .map(({ action, i }) => (
+                <option key={action.name} value={`ready:${g}:${i}`}>
+                  {menuLabel(action)}
+                </option>
+              ))}
+          </optgroup>
+        ))}
+      </select>
+      <div className="flex min-w-44 flex-1 items-center gap-1.5">
+        {step.action === "keys" && <KeysInput value={step.target} onChange={(target) => onChange({ ...step, target })} />}
+        {(step.action === "command" || step.action === "dispatch") && (
+          <input
+            className="field w-full font-mono"
+            value={step.target}
+            placeholder={step.action === "command" ? "notify-send hi" : "workspace e+1"}
+            onChange={(e) => onChange({ ...step, target: e.target.value })}
+          />
+        )}
+        {step.action === "wait" && (
+          <>
+            <input
+              className="field w-20 text-right"
+              type="number"
+              min={10}
+              value={step.target}
+              onChange={(e) => onChange({ ...step, target: e.target.value })}
+            />
+            <span className="text-ink-2">ms</span>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
 /** One line of a gesture: a quiet word, then its controls. */
 function Line({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-12 shrink-0 text-[12px] text-ink-2">{label}</span>
+      <span className="w-16 shrink-0 text-[12px] text-ink-2">{label}</span>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{children}</div>
     </div>
   );
@@ -221,17 +346,30 @@ function Line({ label, children }: { label: string; children: ReactNode }) {
 
 /** What to draw or press, at the end of the name. */
 function Preview({ gesture: g, shapes }: { gesture: Gesture; shapes: ShapeInfo[] }) {
+  const held = MODIFIERS.filter((m) => g.with?.split("+").includes(m.key));
+  const keys = held.length > 0 && (
+    <span className="text-[13px] text-ink-2" title={`Holding ${held.map((m) => m.label).join(" and ")}`}>
+      {held.map((m) => m.glyph).join("")}
+    </span>
+  );
+  let drawn: ReactNode = null;
   if (g.input === "stroke") {
-    return <span className="text-[17px] tracking-[0.15em] text-accent">{arrows(g.value)}</span>;
-  }
-  if (g.input === "shape") {
+    drawn = <span className="text-[17px] tracking-[0.15em] text-accent">{arrows(g.value)}</span>;
+  } else if (g.input === "shape") {
     const shape = shapes.find((s) => s.name === g.value);
-    return shape ? <ShapeThumb outline={shape.outline} className="size-6 text-accent" /> : null;
+    drawn = shape ? <ShapeThumb outline={shape.outline} className="size-6 text-accent" /> : null;
+  } else {
+    const wheel: Record<string, string> = { up: "↑", down: "↓", left: "←", right: "→" };
+    drawn = (
+      <span className="text-[12px] font-medium text-accent">
+        {g.input === "wheel" ? `Wheel ${wheel[g.value]}` : `${g.value === "left" ? "Left" : "Right"} click`}
+      </span>
+    );
   }
-  const wheel: Record<string, string> = { up: "↑", down: "↓", left: "←", right: "→" };
   return (
-    <span className="text-[12px] font-medium text-accent">
-      {g.input === "wheel" ? `Wheel ${wheel[g.value]}` : `${g.value === "left" ? "Left" : "Right"} click`}
+    <span className="flex items-center gap-1.5">
+      {keys}
+      {drawn}
     </span>
   );
 }
@@ -260,7 +398,7 @@ export function KeysInput({ value, onChange }: { value: string; onChange: (combo
   }, [recording, onChange]);
 
   return (
-    <div className="flex gap-1.5">
+    <div className="flex w-full gap-1.5">
       <input
         className="field w-full min-w-28 font-mono"
         value={recording ? "" : value}

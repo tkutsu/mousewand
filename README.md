@@ -48,7 +48,7 @@ pnpm -C crates/mousewand-settings/ui build
 cargo install --path crates/mousewand-settings
 ```
 
-Draw a circle over a window to open it on that window's app. `mousewand-settings --class firefox` opens it from a terminal. It edits the same files described below, keeps your comments, and won't save a config mousewand would reject. It can also record a shortcut or detect your trigger button as you press them, and teach mousewand new shapes.
+Draw a circle over a window to open it on that window's app. `mousewand-settings --class firefox` opens it from a terminal. It edits the same files described below, keeps your comments, and won't save a config mousewand would reject. It can also record a shortcut or detect your trigger button as you press them, offer ready-made actions like Back or Close tab, and teach mousewand new shapes.
 
 ## Configuration
 
@@ -92,11 +92,22 @@ The input is one of these:
 - `wheel = "up"`: a wheel notch while you hold the trigger, `up`, `down`, `left` or `right`. It fires on every notch.
 - `click = "right"`: a `left` or `right` click while you hold the trigger.
 
+A stroke or shape can also need keys held on the keyboard, so one stroke can do two things. See [Modifiers](#modifiers).
+
 The action is one of these:
 
 - `keys = "ctrl+shift+t"`: a key combo for the window you drew over. Keys are positions on a US keyboard, whatever your layout.
 - `command = "..."`: a shell command. It gets `$MOUSEWAND_CLASS` and `$MOUSEWAND_TITLE`.
 - `dispatch = "..."`: a compositor command. See [Desktops](#desktops) for what each one takes.
+
+An action can also be a list of steps, run one after another. Each step waits for the one before it to finish, a command for up to 3 seconds, and `wait` pauses for that many milliseconds:
+
+```toml
+[[gesture]]
+stroke = "UR"
+name = "Copy and search"
+action = [{ keys = "ctrl+c" }, { wait = 150 }, { command = 'xdg-open "https://duckduckgo.com/?q=$(wl-paste | jq -sRr @uri)"' }]
+```
 
 A stroke can keep firing while you hold the trigger. With `repeat = true` it fires when it's recognized, again for every `step` pixels (80 by default) you keep moving in its last direction, and on every wheel notch, which suits scrubbing through tabs. With `hold` in the action it does the same and holds those keys down until you let go, which makes a real alt-tab:
 
@@ -113,7 +124,7 @@ A repeating stroke takes over as soon as it's drawn, so no other stroke may star
 
 A shape matches by how the drawing looks rather than its directions. A circle counts when it's squashed, tilted, drawn either way round, or not quite closed.
 
-`circle` is built in. To add a shape, draw it five times in the settings app. It saves the shape as `shapes/<name>.toml` and lists every shape under General, where you can redraw or remove them.
+`circle`, `triangle`, `square`, `star`, `heart`, `check`, `spiral` and `infinity` are built in. To add a shape, draw it five times in the settings app. It saves the shape as `shapes/<name>.toml` and lists every shape under Shapes, where you can redraw or remove the ones you drew.
 
 ```toml
 [[gesture]]
@@ -122,7 +133,46 @@ name = "Reopen tab"
 action = { keys = "ctrl+shift+t" }
 ```
 
-Shapes fire on release and can't repeat or hold keys. A stroke with a gesture of its own takes precedence over a shape, so a square drawn as `LDRU` stays a square if `LDRU` has a gesture. Otherwise it's round enough to count as a circle.
+Shapes fire on release and can't repeat or hold keys. A stroke with a gesture of its own takes precedence over a shape. Among shapes, a drawing matches the one it looks most like, but only shapes some gesture uses compete: with just `circle` in use, a square is round enough to count as a circle.
+
+### Modifiers
+
+With `with`, a stroke or shape only fires while those keys are held on the keyboard, and the same stroke without them can do something else:
+
+```toml
+[[gesture]]
+stroke = "L"
+name = "Back"
+action = { keys = "alt+Left" }
+
+[[gesture]]
+stroke = "L"
+with = "shift"
+name = "Previous tab"
+action = { keys = "ctrl+shift+Tab" }
+```
+
+`with` takes `ctrl`, `shift`, `alt` and `super`, joined with `+`, and the keys must match exactly. Only strokes and shapes that fire on release can use it. Their keys are typed once you let go of the modifiers too, so Shift doesn't turn `ctrl+t` into `ctrl+shift+t`.
+
+mousewand needs to read the keyboard to know what's held. It only asks which keys are down at the moment a gesture fires, and never reads what you type, but the access it needs would let any program you run read your typing. That's why this udev rule is separate, and only worth installing if you use `with`:
+
+```fish
+sudo cp dist/71-mousewand-keyboard.rules /etc/udev/rules.d/
+sudo udevadm control --reload; and sudo udevadm trigger
+```
+
+Being in the `input` group works too.
+
+### Turning gestures off
+
+`enabled = false` in an app file turns gestures off over that app, for games or anything else that wants the button for itself. The trigger is an ordinary button there, and so is the `[global]` trigger:
+
+```toml
+# ~/.config/mousewand/apps/blender.toml
+enabled = false
+```
+
+`mousewand toggle` pauses gestures everywhere, and running it again resumes them. Bind it to a keyboard shortcut in your desktop's settings.
 
 ### Global gestures
 
@@ -148,6 +198,7 @@ These are the defaults:
 trigger = "middle"   # middle, back (mouse 4), forward (mouse 5), mouse6 to mouse8
 threshold = 8        # pixels to move before a press becomes a gesture
 hold_ms = 300        # holding still this long makes it a normal press
+cancel_ms = 700      # holding still this long mid-stroke cancels it; 0 never does
 min_segment = 30     # shorter strokes are ignored as noise
 devices = []         # only use mice whose name contains one of these
 theme = "default"    # or a file in themes/, without .toml
@@ -249,7 +300,16 @@ On GNOME, log out and back in once after the first start. On X11, mousewand need
 
 A click stays a click unless you draw a stroke, and holding still for `hold_ms` makes a normal press, for middle-drag and autoscroll. If quick flicks still turn into strokes, raise `min_segment`.
 
+### A gesture with Shift or Ctrl does nothing
+
+The log says `can't read the keyboard` once if mousewand can't see which keys are held. Install the rule in [Modifiers](#modifiers), then log out and back in. A gesture `with = "shift"` doesn't fire while Ctrl is held too.
+
+### A stroke I gave up on fired anyway
+
+Holding still for `cancel_ms` cancels a stroke, and the hint says "Cancelled". A repeating gesture that has already taken over doesn't cancel.
+
 ### A circle does something else
+
 
 A stroke with a gesture takes precedence over a shape, and a repeating stroke takes over as soon as it's drawn. Debug logging shows which stroke your circle made.
 

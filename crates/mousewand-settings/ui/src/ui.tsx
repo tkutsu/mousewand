@@ -69,6 +69,67 @@ export function Segmented<T extends string>({
   );
 }
 
+/** A macOS switch. */
+export function Switch({
+  on,
+  label,
+  onChange,
+}: {
+  on: boolean;
+  label: string;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors ${on ? "bg-accent" : "bg-ink/15"}`}
+      onClick={() => onChange(!on)}
+    >
+      <span
+        className={`absolute top-[2px] left-[2px] size-[18px] rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.25)] transition-transform ${
+          on ? "translate-x-4" : ""
+        }`}
+      />
+    </button>
+  );
+}
+
+/** Buttons that each turn on and off, like a toolbar's: for picking several. */
+export function Toggles<T extends string>({
+  values,
+  options,
+  onChange,
+}: {
+  values: T[];
+  options: { key: T; label: string; title?: string }[];
+  onChange: (values: T[]) => void;
+}) {
+  return (
+    <div className="inline-flex h-7 rounded-md bg-ink/[0.06] p-0.5">
+      {options.map(({ key, label, title }) => {
+        const on = values.includes(key);
+        return (
+          <button
+            key={key}
+            type="button"
+            aria-pressed={on}
+            title={title}
+            className={`rounded-[5px] px-2 text-[12px] font-medium transition ${
+              on ? "bg-accent text-white shadow-[0_0.5px_2px_rgb(0_0_0/0.18)]" : "text-ink-2 hover:text-ink"
+            }`}
+            onClick={() => onChange(on ? values.filter((v) => v !== key) : [...values, key])}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** A problem with a field, in red under it. */
 export function Problem({ children }: { children: ReactNode }) {
   return (

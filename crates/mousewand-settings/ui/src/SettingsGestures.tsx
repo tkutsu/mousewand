@@ -21,7 +21,7 @@ export const COMMANDS = [
 type Command = (typeof COMMANDS)[number];
 
 const presses = (g: Gesture, command: Command) =>
-  g.action === "keys" && g.target.toLowerCase() === command.keys.toLowerCase();
+  g.steps.length === 1 && g.steps[0].action === "keys" && g.steps[0].target.toLowerCase() === command.keys.toLowerCase();
 
 type Props = {
   settings: Settings;
@@ -46,7 +46,7 @@ export default function SettingsGestures({ settings, app, shapes, onSettings, on
     const others = app.gestures.filter((g) => !COMMANDS.some((c) => presses(g, c)));
     const ours = COMMANDS.flatMap((c): Gesture[] => {
       const drawn = c === changed ? to : drawnFor(c);
-      return drawn ? [{ ...newGesture(), ...drawn, target: c.keys, name: c.label }] : [];
+      return drawn ? [{ ...newGesture(), ...drawn, steps: [{ action: "keys", target: c.keys }], name: c.label }] : [];
     });
     onApp({ ...app, gestures: [...ours, ...others] });
   };
@@ -55,7 +55,12 @@ export default function SettingsGestures({ settings, app, shapes, onSettings, on
     onApp({
       ...app,
       gestures: [
-        ...COMMANDS.map((c) => ({ ...newGesture(), value: c.suggested, target: c.keys, name: c.label })),
+        ...COMMANDS.map((c) => ({
+          ...newGesture(),
+          value: c.suggested,
+          steps: [{ action: "keys" as const, target: c.keys }],
+          name: c.label,
+        })),
         ...app.gestures.filter((g) => !COMMANDS.some((c) => presses(g, c))),
       ],
     });

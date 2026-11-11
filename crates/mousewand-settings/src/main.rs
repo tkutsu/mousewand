@@ -61,6 +61,13 @@ fn alike(examples: Vec<Vec<(f64, f64)>>, drawing: Vec<(f64, f64)>) -> bool {
     mousewand_core::shape::alike(&examples, &drawing)
 }
 
+/// Whether mousewand can see which modifiers are held, which gestures
+/// `with` them need.
+#[tauri::command]
+fn keyboard_access() -> bool {
+    mousewand_input::keyboards_readable()
+}
+
 /// What the daemon's setup said on this compositor, in
 /// `$XDG_STATE_HOME/mousewand/notes`, one per line.
 #[tauri::command]
@@ -115,6 +122,7 @@ fn main() {
             save_shape,
             delete_shape,
             alike,
+            keyboard_access,
             notes
         ])
         .run(tauri::generate_context!())

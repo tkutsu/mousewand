@@ -1,14 +1,15 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { COMMON, groupsFor } from "./actions";
 import * as api from "./api";
 import ButtonInput from "./ButtonInput";
 import { problems, sentence } from "./check";
 import GestureList from "./GestureList";
 import SettingsGestures from "./SettingsGestures";
 import Shapes from "./Shapes";
-import { Logo, Problem, Row, Section } from "./ui";
+import { Logo, Problem, Row, Section, Switch } from "./ui";
 
-type Page = "general" | "every" | "app" | "setup";
+type Page = "general" | "every" | "app" | "shapes" | "setup";
 
 type Status = { kind: "ok" | "error" | "warn"; text: string } | null;
 
@@ -20,6 +21,7 @@ export default function App() {
   const [settingsApp, setSettingsApp] = useState<api.App | null>(null);
   const [shapes, setShapes] = useState<api.ShapeInfo[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
+  const [keyboard, setKeyboard] = useState(true);
   const [page, setPage] = useState<Page>("every");
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<Status>(null);
@@ -28,6 +30,7 @@ export default function App() {
   const main = useRef<HTMLElement>(null);
 
   useEffect(() => {
+    api.keyboardAccess().then(setKeyboard, () => setKeyboard(false));
     Promise.all([api.load(), api.notes()])
       .then(([s, n]) => {
         setState(s);
@@ -56,13 +59,14 @@ export default function App() {
     "general",
     "every",
     ...(app ? (["app"] as const) : []),
+    "shapes",
     ...(notes.length > 0 ? (["setup"] as const) : []),
   ];
 
   /** The first page with a gesture that won't save. */
   const unfinished = (): Page | null => {
     if (problems(global).some(Boolean)) return "every";
-    if (app && problems(app.gestures).some(Boolean)) return "app";
+    if (app?.enabled && problems(app.gestures).some(Boolean)) return "app";
     const open = settings?.openSettings;
     if (open?.input === "stroke" && !open.value) return "general";
     if (settingsApp && problems(settingsApp.gestures).some(Boolean)) return "general";
@@ -135,14 +139,14 @@ export default function App() {
       .then((s) => setShapes(s.shapes))
       .catch((e) => setStatus({ kind: "error", text: sentence(e) }));
 
-  const shapeProps = { shapes, onNewShape: reloadShapes };
+  const shapeProps = { shapes, onNewShape: reloadShapes, keyboard };
 
   /** Where the unsaved gestures use a shape, if they do. */
   const usedWhere = (name: string): string | null => {
     const uses = (gestures: api.Gesture[]) => gestures.some((g) => g.input === "shape" && g.value === name);
     if (settings?.openSettings.input === "shape" && settings.openSettings.value === name) return "General";
     if (uses(global)) return "Every App";
-    if (app && uses(app.gestures)) return `Current App: ${app.classes[0]}`;
+    if (app && uses(app.gestures)) return api.appName(app);
     if (settingsApp && uses(settingsApp.gestures)) return "General";
     return null;
   };
@@ -156,9 +160,10 @@ export default function App() {
   }
 
   const titles: Record<Page, string> = {
-    app: `Current App: ${app?.classes[0] ?? ""}`,
+    app: app ? api.appName(app) : "",
     every: "Every App",
     general: "General",
+    shapes: "Shapes",
     setup: "Setup",
   };
 
@@ -196,18 +201,19 @@ export default function App() {
                   shapes={shapes.map((s) => s.name)}
                   onNewShape={reloadShapes}
                 />
-                <Shapes shapes={shapes} usedWhere={usedWhere} onChanged={reloadShapes} />
               </>
             )}
             {page === "every" && (
               <GestureList
                 title="Gestures"
-                note="Every app gets these, unless it has its own gesture for the same input."
+                note="Every app gets these, unless it has its own gesture for the same input. Ready-made actions press the shortcut most apps use; if an app uses another, change the keys."
                 gestures={global}
                 onChange={edit(setGlobal)}
+                readyMade={COMMON}
                 {...shapeProps}
               />
             )}
+            {page === "shapes" && <Shapes shapes={shapes} usedWhere={usedWhere} onChanged={reloadShapes} />}
             {page === "app" && app && (
               <AppPage app={app} presets={state.presets} onChange={edit(setApp)} shapeProps={shapeProps} />
             )}
@@ -269,7 +275,7 @@ function GeneralPage({
   onChange: (settings: api.Settings) => void;
 }) {
   const set = (patch: Partial<api.Settings>) => onChange({ ...settings, ...patch });
-  const number = (key: "threshold" | "holdMs" | "minSegment", unit: string) => (
+  const number = (key: "threshold" | "holdMs" | "minSegment" | "cancelMs", unit: string) => (
     <>
       <input
         className="field w-20 text-right"
@@ -300,6 +306,30 @@ function GeneralPage({
         <Row label="Ignore strokes under" hint="Shorter wiggles don't count as a direction">
           {number("minSegment", "px")}
         </Row>
+        <Row
+          label="Cancel by holding still"
+          hint="Changed your mind mid-stroke? Stop moving, and nothing fires"
+        >
+          {settings.cancelMs > 0 && number("cancelMs", "ms")}
+          <Switch
+            on={settings.cancelMs > 0}
+            label="Cancel by holding still"
+            onChange={(on) => set({ cancelMs: on ? 700 : 0 })}
+          />
+        </Row>
+      </Section>
+      <Section
+        title="Pausing"
+        note={
+          <>
+            For games and anything else that wants the button for itself. An app can also turn its gestures off
+            for good, on its own page.
+          </>
+        }
+      >
+        <Row label="Pause or resume" hint="Bind it to a keyboard shortcut in your desktop's settings">
+          <code className="rounded-md bg-ink/[0.06] px-2 py-1 font-mono text-[12px] select-text">mousewand toggle</code>
+        </Row>
       </Section>
       <Section title="Trail">
         <Row label="Theme" hint="Themes are files in themes/">
@@ -323,25 +353,36 @@ function AppPage({
   app: api.App;
   presets: api.Preset[];
   onChange: (app: api.App) => void;
-  shapeProps: { shapes: api.ShapeInfo[]; onNewShape: (name: string) => void };
+  shapeProps: { shapes: api.ShapeInfo[]; onNewShape: (name: string) => void; keyboard: boolean };
+
 }) {
   const lower = (s: string) => s.toLowerCase();
   const matching = presets.filter((p) => p.classes.some((c) => app.classes.map(lower).includes(lower(c))));
   const others = presets.filter((p) => !matching.includes(p));
   const [preset, setPreset] = useState(matching[0]?.name ?? "");
+  const name = api.appName(app);
 
   const addPreset = () => {
     const chosen = presets.find((p) => p.name === preset);
     if (!chosen) return;
-    // A preset's gesture replaces one with the same input.
-    const key = (g: api.Gesture) => `${g.input}:${g.value}`;
+    // A preset's gesture replaces one drawn the same way.
+    const key = (g: api.Gesture) => `${g.input}:${g.value}:${g.with ?? ""}`;
     const incoming = new Set(chosen.gestures.map(key));
     onChange({ ...app, gestures: [...app.gestures.filter((g) => !incoming.has(key(g))), ...chosen.gestures] });
   };
 
   return (
     <>
-      <Section note={`Saved in apps/${app.file}.toml`}>
+      <Section
+        note={
+          app.enabled
+            ? `Saved in apps/${app.file}.toml`
+            : `The trigger button is an ordinary button over ${name}: a press, a drag or a click, as if mousewand weren't there.`
+        }
+      >
+        <Row label={`Gestures in ${name}`} hint={app.enabled ? "On" : "Off"}>
+          <Switch on={app.enabled} label={`Gestures in ${name}`} onChange={(enabled) => onChange({ ...app, enabled })} />
+        </Row>
         <Row label="Window classes" hint="Separate several with commas">
           <input
             className="field w-72 font-mono"
@@ -357,35 +398,41 @@ function AppPage({
             }
           />
         </Row>
-        <Row label="Preset" hint="Adds its gestures, replacing yours for the same input">
-          <select className="field w-48" value={preset} onChange={(e) => setPreset(e.target.value)}>
-            <option value="" disabled>
-              Choose…
-            </option>
-            {matching.length > 0 && (
-              <optgroup label="For This App">
-                {matching.map((p) => (
+        {app.enabled && (
+          <Row label="Preset" hint="Adds its gestures, replacing yours for the same input">
+            <select className="field w-48" value={preset} onChange={(e) => setPreset(e.target.value)}>
+              <option value="" disabled>
+                Choose…
+              </option>
+              {matching.length > 0 && (
+                <optgroup label="For This App">
+                  {matching.map((p) => (
+                    <option key={p.name}>{p.name}</option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="Others">
+                {others.map((p) => (
                   <option key={p.name}>{p.name}</option>
                 ))}
               </optgroup>
-            )}
-            <optgroup label="Others">
-              {others.map((p) => (
-                <option key={p.name}>{p.name}</option>
-              ))}
-            </optgroup>
-          </select>
-          <button className="button" disabled={!preset} onClick={addPreset}>
-            Add
-          </button>
-        </Row>
+            </select>
+            <button className="button" disabled={!preset} onClick={addPreset}>
+              Add
+            </button>
+          </Row>
+        )}
       </Section>
-      <GestureList
-        title="Gestures"
-        gestures={app.gestures}
-        onChange={(gestures) => onChange({ ...app, gestures })}
-        {...shapeProps}
-      />
+      {app.enabled && (
+        <GestureList
+          title="Gestures"
+          note={`These replace the ones for every app that are drawn the same way. Ready-made actions press ${name}'s usual shortcuts; if you've changed one, change the keys too.`}
+          gestures={app.gestures}
+          onChange={(gestures) => onChange({ ...app, gestures })}
+          readyMade={groupsFor(app.classes, presets)}
+          {...shapeProps}
+        />
+      )}
     </>
   );
 }

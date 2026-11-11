@@ -3,14 +3,19 @@ import { invoke } from "@tauri-apps/api/core";
 export type Gesture = {
   input: "stroke" | "shape" | "wheel" | "click";
   value: string;
+  /** Modifiers held on the keyboard, like "ctrl+shift". */
+  with: string | null;
   kind: "oneshot" | "repeat" | "hold";
   step: number | null;
   hold: string | null;
-  action: "keys" | "command" | "dispatch";
-  target: string;
+  /** What it does, one step after another. */
+  steps: Step[];
   /** What hints call it. */
   name: string | null;
 };
+
+/** One step of what a gesture does; a wait's target is milliseconds. */
+export type Step = { action: "keys" | "command" | "dispatch" | "wait"; target: string };
 
 /** A stroke or a shape. */
 export type Drawn = { input: "stroke" | "shape"; value: string };
@@ -19,6 +24,8 @@ export type Settings = {
   trigger: string;
   threshold: number;
   holdMs: number;
+  /** Holding still this long mid-stroke cancels it; 0 never does. */
+  cancelMs: number;
   minSegment: number;
   theme: string;
   /** What opens this app. */
@@ -28,8 +35,19 @@ export type Settings = {
 export type App = {
   file: string;
   classes: string[];
+  /** Off, the trigger is an ordinary button over this app. */
+  enabled: boolean;
   gestures: Gesture[];
 };
+
+/** An app's name for people: "org.gnome.Nautilus" is Nautilus, "google-chrome" Google Chrome. */
+export const appName = (app: App) =>
+  (app.classes[0] ?? app.file)
+    .split(".")
+    .pop()!
+    .split(/[-_]/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 
 export type Preset = {
   name: string;
@@ -65,6 +83,9 @@ export type Notes = { notes: string[]; open: boolean };
 
 export const notes = () => invoke<Notes>("notes");
 
+/** Whether mousewand can see which modifiers are held. */
+export const keyboardAccess = () => invoke<boolean>("keyboard_access");
+
 /** Saves a drawn shape, each example a list of [x, y]; resolves to its file name. Only a redraw may replace one. */
 export const saveShape = (name: string, examples: [number, number][][], redraw: boolean) =>
   invoke<string>("save_shape", { name, examples, redraw });
@@ -80,13 +101,16 @@ export const alike = (examples: [number, number][][], drawing: [number, number][
 export const save = (settings: Settings, global: Gesture[], apps: App[]) =>
   invoke<void>("save", { settings, global, apps });
 
+export const newStep = (): Step => ({ action: "keys", target: "" });
+
 export const newGesture = (): Gesture => ({
   input: "stroke",
   value: "",
+  with: null,
   kind: "oneshot",
   step: null,
   hold: null,
-  action: "keys",
-  target: "",
+  steps: [newStep()],
   name: null,
 });
+

@@ -21,17 +21,28 @@ pub struct Gesture {
     pub input: String,
     /// The stroke, shape name, wheel direction or clicked button.
     pub value: String,
+    /// Modifiers held on the keyboard, like "ctrl+shift".
+    #[serde(default)]
+    pub with: Option<String>,
     /// "oneshot", "repeat" or "hold": `repeat = true`, or `hold` in the action.
     pub kind: String,
     pub step: Option<f64>,
     /// The keys a "hold" gesture holds down.
     pub hold: Option<String>,
-    /// "keys", "command" or "dispatch".
-    pub action: String,
-    pub target: String,
+    /// What it does, in turn: one step, or several.
+    pub steps: Vec<Step>,
     /// What hints call it.
     #[serde(default)]
     pub name: Option<String>,
+}
+
+/// One step of an action.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Step {
+    /// "keys", "command", "dispatch" or "wait".
+    pub action: String,
+    /// The keys, command or dispatcher, or the milliseconds to wait.
+    pub target: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -40,6 +51,8 @@ pub struct Settings {
     pub trigger: String,
     pub threshold: f64,
     pub hold_ms: u64,
+    /// Holding still this long mid-stroke cancels it; 0 never does.
+    pub cancel_ms: u64,
     pub min_segment: f64,
     pub theme: String,
     /// The stroke or shape that opens this app.
@@ -60,6 +73,8 @@ pub struct App {
     /// The file stem in `apps/`.
     pub file: String,
     pub classes: Vec<String>,
+    /// Off, the trigger is an ordinary button over this app.
+    pub enabled: bool,
     pub gestures: Vec<Gesture>,
 }
 
@@ -86,6 +101,17 @@ pub struct State {
     /// The built-in shapes, then the drawn ones.
     pub shapes: Vec<ShapeInfo>,
     pub presets: Vec<Preset>,
+}
+
+impl App {
+    fn new(file: String, classes: Vec<String>) -> App {
+        App {
+            file,
+            classes,
+            enabled: true,
+            gestures: Vec::new(),
+        }
+    }
 }
 
 /// A shape as the shapes list shows it.
@@ -129,6 +155,7 @@ impl Dir {
             trigger: s.trigger.to_string(),
             threshold: s.threshold,
             hold_ms: s.hold_ms,
+            cancel_ms: s.cancel_ms,
             min_segment: s.min_segment,
             theme: s.theme.clone(),
             open_settings: Drawn {
@@ -176,17 +203,13 @@ impl Dir {
             };
             if classes.iter().any(|c| c.eq_ignore_ascii_case(class)) {
                 return Ok(App {
-                    file,
-                    classes,
+                    enabled: table.get("enabled").and_then(|e| e.as_bool()) != Some(false),
                     gestures: gestures_of(&table)?,
+                    ..App::new(file, classes)
                 });
             }
         }
-        Ok(App {
-            file: file_name(class),
-            classes: vec![class.into()],
-            gestures: Vec::new(),
-        })
+        Ok(App::new(file_name(class), vec![class.into()]))
     }
 
     fn app_files(&self) -> Result<Vec<(String, String)>, String> {
@@ -267,7 +290,7 @@ impl Dir {
             let path = self.app_path(&app.file);
             let old = read(&path)?;
             // An app with nothing in it needs no file.
-            if old.is_empty() && app.gestures.is_empty() {
+            if old.is_empty() && app.gestures.is_empty() && app.enabled {
                 continue;
             }
             let text = edit_app(&old, app)?;
@@ -360,19 +383,40 @@ fn gesture_of(table: &toml::Table) -> Result<Gesture, String> {
         .into_iter()
         .find_map(|key| Some((key.to_string(), text(key)?)))
         .ok_or("a gesture needs a stroke, shape, wheel or click")?;
-    let action = table
-        .get("action")
-        .and_then(|a| a.as_table())
-        .ok_or("a gesture needs an action")?;
-    let (what, target) = ["keys", "command", "dispatch"]
-        .into_iter()
-        .find_map(|key| Some((key.to_string(), action.get(key)?.as_str()?.to_string())))
-        .ok_or("an action needs keys, a command or a dispatch")?;
-    let hold = action.get("hold").and_then(|h| h.as_str()).map(String::from);
+    let actions: Vec<&toml::Table> = match table.get("action") {
+        Some(toml::Value::Table(one)) => vec![one],
+        Some(toml::Value::Array(list)) => list.iter().filter_map(|a| a.as_table()).collect(),
+        _ => return Err("a gesture needs an action".into()),
+    };
+    let steps = actions
+        .iter()
+        .map(|action| {
+            let text = |key: &str| match action.get(key)? {
+                toml::Value::String(s) => Some(s.clone()),
+                toml::Value::Integer(n) => Some(n.to_string()),
+                _ => None,
+            };
+            ["keys", "command", "dispatch", "wait"]
+                .into_iter()
+                .find_map(|key| {
+                    Some(Step {
+                        action: key.into(),
+                        target: text(key)?,
+                    })
+                })
+                .ok_or("an action needs keys, a command or a dispatch".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let hold = actions
+        .first()
+        .and_then(|a| a.get("hold"))
+        .and_then(|h| h.as_str())
+        .map(String::from);
     let repeat = table.get("repeat").and_then(|r| r.as_bool()) == Some(true);
     Ok(Gesture {
         input,
         value,
+        with: text("with"),
         kind: match (&hold, repeat) {
             (Some(_), _) => "hold",
             (None, true) => "repeat",
@@ -383,8 +427,7 @@ fn gesture_of(table: &toml::Table) -> Result<Gesture, String> {
             .get("step")
             .and_then(|s| s.as_float().or(s.as_integer().map(|i| i as f64))),
         hold,
-        action: what,
-        target,
+        steps,
         name: text("name"),
     })
 }
@@ -398,6 +441,11 @@ fn edit_main(text: &str, settings: &Settings, global: &[Gesture]) -> Result<Stri
     doc["trigger"] = value(&settings.trigger);
     doc["threshold"] = value(settings.threshold);
     doc["hold_ms"] = value(settings.hold_ms as i64);
+    // Written once it's been changed, like `open_settings`.
+    let cancel_ms = settings.cancel_ms as i64;
+    if cancel_ms != 700 || doc.contains_key("cancel_ms") {
+        doc["cancel_ms"] = value(cancel_ms);
+    }
     doc["min_segment"] = value(settings.min_segment);
     doc["theme"] = value(&settings.theme);
     // The default stays unwritten, so the file only says what differs.
@@ -419,6 +467,13 @@ fn edit_app(text: &str, app: &App) -> Result<String, String> {
     if !(implied && doc.get("match").is_none()) {
         doc["match"] = value(app.classes.iter().collect::<Array>());
     }
+    // On is the default, so only off is written.
+    match app.enabled {
+        true => {
+            doc.remove("enabled");
+        }
+        false => doc["enabled"] = value(false),
+    }
     set_gestures(&mut doc, &app.gestures);
     Ok(doc.to_string())
 }
@@ -435,6 +490,9 @@ fn set_gestures(doc: &mut DocumentMut, gestures: &[Gesture]) {
         if let Some(name) = g.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
             table["name"] = value(name);
         }
+        if let Some(with) = g.with.as_deref().filter(|w| !w.is_empty()) {
+            table["with"] = value(with);
+        }
         let continuous = g.input == "stroke" && g.kind != "oneshot";
         if continuous {
             // Holding keys implies repeating.
@@ -445,18 +503,30 @@ fn set_gestures(doc: &mut DocumentMut, gestures: &[Gesture]) {
                 table["step"] = value(step);
             }
         }
-        let mut action = InlineTable::new();
-        action.insert(&g.action, g.target.as_str().into());
+        let mut steps: Vec<InlineTable> = g.steps.iter().map(step_table).collect();
         if continuous
             && g.kind == "hold"
-            && let Some(hold) = &g.hold
+            && let (Some(hold), [only]) = (&g.hold, steps.as_mut_slice())
         {
-            action.insert("hold", hold.as_str().into());
+            only.insert("hold", hold.as_str().into());
         }
-        table["action"] = Item::Value(action.into());
+        table["action"] = match steps.len() {
+            1 => Item::Value(steps.remove(0).into()),
+            _ => Item::Value(steps.into_iter().collect::<Array>().into()),
+        };
         list.push(table);
     }
     doc.insert("gesture", Item::ArrayOfTables(list));
+}
+
+/// `{ keys = "ctrl+t" }`, or `{ wait = 200 }` with a number.
+fn step_table(step: &Step) -> InlineTable {
+    let mut table = InlineTable::new();
+    match (step.action.as_str(), step.target.trim().parse::<i64>()) {
+        ("wait", Ok(ms)) => table.insert("wait", ms.into()),
+        _ => table.insert(&step.action, step.target.as_str().into()),
+    };
+    table
 }
 
 #[derive(Deserialize)]
@@ -499,13 +569,57 @@ mod tests {
         Gesture {
             input: "stroke".into(),
             value: stroke.into(),
+            with: None,
             kind: "oneshot".into(),
             step: None,
             hold: None,
-            action: "keys".into(),
-            target: combo.into(),
+            steps: vec![Step {
+                action: "keys".into(),
+                target: combo.into(),
+            }],
             name: None,
         }
+    }
+
+    #[test]
+    fn steps_modifiers_and_turning_an_app_off() {
+        let (dir, path) = dir("steps");
+        let state = dir.load(Some("blender")).unwrap();
+        let mut app = state.app.unwrap();
+        app.enabled = false;
+        let mut copy = keys("U", "ctrl+c");
+        copy.with = Some("shift".into());
+        copy.steps.push(Step {
+            action: "wait".into(),
+            target: "150".into(),
+        });
+        copy.steps.push(Step {
+            action: "command".into(),
+            target: "notify-send copied".into(),
+        });
+        let mut settings = state.settings.clone();
+        settings.cancel_ms = 0;
+        dir.save(&settings, &[copy.clone()], std::slice::from_ref(&app)).unwrap();
+
+        let main = std::fs::read_to_string(path.join("config.toml")).unwrap();
+        assert!(main.contains("with = \"shift\""), "{main}");
+        assert!(
+            main.contains("action = [{ keys = \"ctrl+c\" }, { wait = 150 }, { command = \"notify-send copied\" }]"),
+            "{main}"
+        );
+        assert!(main.contains("cancel_ms = 0"), "{main}");
+        let blender = std::fs::read_to_string(path.join("apps/blender.toml")).unwrap();
+        assert!(blender.contains("enabled = false"), "{blender}");
+
+        let again = dir.load(Some("blender")).unwrap();
+        assert_eq!(again.global, [copy]);
+        assert_eq!(again.settings.cancel_ms, 0);
+        let mut app = again.app.unwrap();
+        assert!(!app.enabled);
+        app.enabled = true;
+        dir.save(&again.settings, &again.global, &[app]).unwrap();
+        let blender = std::fs::read_to_string(path.join("apps/blender.toml")).unwrap();
+        assert!(!blender.contains("enabled"), "{blender}");
     }
 
     #[test]
@@ -514,10 +628,10 @@ mod tests {
         assert!(presets.len() >= 5);
         for preset in presets {
             let app = App {
-                file: "x".into(),
-                classes: preset.classes.clone(),
                 gestures: preset.gestures.clone(),
+                ..App::new("x".into(), preset.classes.clone())
             };
+
             let text = edit_app("", &app).unwrap();
             Config::parse("", &[("x".into(), text)], &[]).unwrap_or_else(|e| panic!("{}: {e}", preset.name));
         }
@@ -603,8 +717,10 @@ mod tests {
         assert!(text.contains("[100, 0]"), "{text}");
         let shapes = dir.load(None).unwrap().shapes;
         let names: Vec<_> = shapes.iter().map(|s| (s.name.as_str(), s.built_in)).collect();
-        assert_eq!(names, [("circle", true), ("my_triangle", false)]);
-        assert_eq!(shapes[1].outline.len(), 32);
+        assert_eq!(names.len(), mousewand_core::shape::BUILT_IN.len() + 1);
+        assert_eq!(names[0], ("circle", true));
+        assert_eq!(names.last(), Some(&("my_triangle", false)));
+        assert_eq!(shapes.last().unwrap().outline.len(), 32);
 
         let gesture = Gesture {
             input: "shape".into(),
@@ -664,7 +780,7 @@ mod tests {
         dir.save(&settings, &[], &[settings_app]).unwrap();
         let again = dir.load(None).unwrap();
         assert_eq!(again.settings.open_settings, settings.open_settings);
-        assert_eq!(again.settings_app.gestures[0].target, "ctrl+s");
+        assert_eq!(again.settings_app.gestures[0].steps[0].target, "ctrl+s");
         assert_eq!(again.settings_app.classes, SETTINGS_CLASSES);
     }
 
