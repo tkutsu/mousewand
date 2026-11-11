@@ -117,6 +117,19 @@ impl FromStr for Rgba {
     }
 }
 
+/// `"#rrggbb"`, with `aa` only when it isn't opaque.
+impl fmt::Display for Rgba {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let [r, g, b, a] = self.0.map(byte);
+        write!(f, "#{r:02x}{g:02x}{b:02x}")?;
+        match a {
+            255 => Ok(()),
+            a => write!(f, "{a:02x}"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
@@ -151,8 +164,9 @@ impl Default for Settings {
     }
 }
 
-/// A mouse button usable as the trigger. Left and right are excluded:
-/// grabbing them would break normal clicking.
+/// A mouse button usable as the trigger. Left is excluded: grabbing it would
+/// break selecting and dragging. Right works, since a quick click is still a
+/// click and holding still is still a press.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Trigger(pub u16);
 
@@ -168,8 +182,9 @@ const BTN_MIDDLE: u16 = 0x112;
 
 /// The buttons a trigger can be, by the names browsers and games use: mouse 4
 /// is the rear thumb button, mouse 5 the front one. Rarer codes are numbered on.
-const BUTTONS: [(&str, u16); 6] = [
+const BUTTONS: [(&str, u16); 7] = [
     ("middle", BTN_MIDDLE),
+    ("right", BTN_RIGHT),
     ("back", 0x113),    // BTN_SIDE
     ("forward", 0x114), // BTN_EXTRA
     ("mouse6", 0x115),  // BTN_FORWARD
@@ -180,11 +195,12 @@ const BUTTONS: [(&str, u16); 6] = [
 impl FromStr for Trigger {
     type Err = String;
 
-    /// A name from [`BUTTONS`], "mouse 3" to "mouse 5", or evdev's "side"
+    /// A name from [`BUTTONS`], "mouse 2" to "mouse 5", or evdev's "side"
     /// and "extra", as tools like evtest show them.
     fn from_str(s: &str) -> Result<Self, String> {
         let name = s.to_ascii_lowercase().replace(' ', "");
         let name = match name.as_str() {
+            "mouse2" => "right",
             "mouse3" => "middle",
             "mouse4" | "side" => "back",
             "mouse5" | "extra" => "forward",
@@ -192,12 +208,12 @@ impl FromStr for Trigger {
         };
         match BUTTONS.iter().find(|(n, _)| *n == name) {
             Some(&(_, code)) => Ok(Trigger(code)),
-            None if name == "left" || name == "right" => {
+            None if name == "left" || name == "mouse1" => {
                 Err(format!("{s:?} can't be the trigger: it would stop normal clicks"))
             }
             None => Err(format!(
-                "unknown button {s:?}: use middle, back (mouse 4), forward (mouse 5), mouse6, mouse7 \
-                 or mouse8, or let the settings app detect it"
+                "unknown button {s:?}: use middle, right, back (mouse 4), forward (mouse 5), mouse6, \
+                 mouse7 or mouse8, or let the settings app detect it"
             )),
         }
     }
@@ -533,6 +549,18 @@ impl FromStr for Position {
     }
 }
 
+/// "bottom center", "top right", or "center" for both.
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let vertical = ["top", "center", "bottom"][self.vertical as usize];
+        let horizontal = ["left", "center", "right"][self.horizontal as usize];
+        match (self.vertical, self.horizontal) {
+            (Align::Center, Align::Center) => f.write_str("center"),
+            _ => write!(f, "{vertical} {horizontal}"),
+        }
+    }
+}
+
 impl HintStyle {
     fn check(&self) -> Result<(), String> {
         if !(0.0..=1.0).contains(&self.opacity) {
@@ -582,6 +610,9 @@ impl Config {
             None => true,
         };
         main.settings.global_trigger = main.global.trigger;
+        let trigger = main.settings.trigger;
+        check_clicks(&main.gestures, trigger).map_err(in_main)?;
+        check_clicks(&main.global.gestures, main.global.trigger.unwrap_or(trigger)).map_err(in_main)?;
         let global = main.global.gestures;
         if shared {
             check_global(&global, &main.gestures).map_err(in_main)?;
@@ -596,6 +627,7 @@ impl Config {
                 let mut file: AppFile =
                     toml::from_str(text).map_err(|e| toml_error(&format!("apps/{stem}.toml"), text, &e))?;
                 resolve(&mut file.gestures, &shapes).map_err(|e| format!("apps/{stem}.toml: {e}"))?;
+                check_clicks(&file.gestures, trigger).map_err(|e| format!("apps/{stem}.toml: {e}"))?;
                 let classes = if file.classes.is_empty() {
                     vec![stem.clone()]
                 } else {
@@ -782,6 +814,16 @@ fn describe(input: &Input) -> String {
         Input::Wheel(wheel) => format!("wheel {wheel:?}").to_lowercase(),
         Input::Click(BTN_LEFT) => "click left".into(),
         Input::Click(_) => "click right".into(),
+    }
+}
+
+/// Clicking the trigger ends the gesture, so it can't be part of one.
+fn check_clicks(gestures: &[Gesture], trigger: Trigger) -> Result<(), String> {
+    match gestures.iter().any(|g| g.input == Input::Click(trigger.0)) {
+        true => Err(format!(
+            "{trigger} is the trigger, so it can't also be clicked during a gesture"
+        )),
+        false => Ok(()),
     }
 }
 
@@ -1080,10 +1122,31 @@ mod tests {
         assert_eq!(code("forward"), Ok(0x114));
         assert_eq!(code("extra"), Ok(0x114));
         assert_eq!(code("mouse3"), Ok(0x112));
+        assert_eq!(code("right"), Ok(BTN_RIGHT));
+        assert_eq!(code("Mouse 2"), Ok(BTN_RIGHT));
         assert_eq!(Trigger(0x113).to_string(), "back");
+        assert_eq!(Trigger(BTN_RIGHT).to_string(), "right");
         assert_eq!(Trigger(0x117).to_string(), "mouse8");
-        assert!(code("right").unwrap_err().contains("normal clicks"));
+        assert!(code("left").unwrap_err().contains("normal clicks"));
         assert!(code("thumb").unwrap_err().contains("detect"));
+    }
+
+    #[test]
+    fn the_trigger_cant_be_clicked() {
+        let click = |button: &str| format!("[[gesture]]\nclick = \"{button}\"\naction = {{ keys = \"a\" }}\n");
+        let right = "trigger = \"right\"\n";
+        assert!(Config::parse(&format!("{right}{}", click("left")), &[], &[]).is_ok());
+        let bad = Config::parse(&format!("{right}{}", click("right")), &[], &[]).unwrap_err();
+        assert_eq!(
+            bad,
+            "config.toml: right is the trigger, so it can't also be clicked during a gesture"
+        );
+        let bad = Config::parse(right, &[("x".into(), click("right"))], &[]).unwrap_err();
+        assert!(bad.starts_with("apps/x.toml"), "{bad}");
+        // [global] with its own trigger is checked against that one.
+        let global =
+            "[global]\ntrigger = \"back\"\n\n[[global.gesture]]\nclick = \"right\"\naction = { keys = \"a\" }\n";
+        assert!(Config::parse(&format!("{right}{global}"), &[], &[]).is_ok());
     }
 
     #[test]
@@ -1194,6 +1257,12 @@ mod tests {
             Rgba([1.0, 0.0, 0.0, 128.0 / 255.0])
         );
         assert_eq!("#00ff00".parse::<Rgba>().unwrap().0[3], 1.0);
+        for color in ["#1c1e26", "#ff000080"] {
+            assert_eq!(color.parse::<Rgba>().unwrap().to_string(), color);
+        }
+        for position in ["bottom center", "top right", "center", "center left"] {
+            assert_eq!(position.parse::<Position>().unwrap().to_string(), position);
+        }
         assert!("#00ff0".parse::<Rgba>().is_err() && "00ff00".parse::<Rgba>().is_err());
     }
 

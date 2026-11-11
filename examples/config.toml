@@ -1,7 +1,7 @@
 # ~/.config/mousewand/config.toml
 # Every setting is optional; these are the defaults.
 
-trigger = "middle"     # middle, back (mouse 4), forward (mouse 5); the settings app can detect it
+trigger = "middle"     # middle, right, back (mouse 4), forward (mouse 5); the settings app can detect it
 threshold = 8          # motion before a press becomes a gesture (≈ px)
 hold_ms = 300          # holding still this long makes it a normal press
 min_segment = 30       # shorter strokes are ignored as noise
