@@ -55,6 +55,8 @@ enum State {
     Gesturing {
         rec: Recognizer,
         shown: Stroke,
+        /// Whether a wheel notch or another button went to the gesture.
+        claimed: bool,
     },
 }
 
@@ -101,6 +103,13 @@ impl Machine {
             State::Idle => Vec::new(),
             State::Pending { .. } => vec![Output::Press, Output::Release],
             State::Holding => vec![Output::Release],
+            // Moved, but drew nothing and claimed nothing: a click made
+            // while the mouse was moving, which shouldn't be lost.
+            State::Gesturing {
+                rec, claimed: false, ..
+            } if rec.stroke().is_empty() => {
+                vec![Output::Cancel, Output::Press, Output::Release]
+            }
             State::Gesturing { rec, .. } => vec![Output::End(rec.stroke())],
         }
     }
@@ -126,7 +135,7 @@ impl Machine {
                 }
                 self.begin()
             }
-            State::Gesturing { rec, shown } => {
+            State::Gesturing { rec, shown, .. } => {
                 rec.push(dx, dy);
                 let mut out = vec![Output::Motion(dx, dy)];
                 let stroke = rec.stroke();
@@ -154,6 +163,9 @@ impl Machine {
             State::Gesturing { .. } => Vec::new(),
             State::Idle | State::Holding => return None,
         };
+        if let State::Gesturing { claimed, .. } = &mut self.state {
+            *claimed = true;
+        }
         out.push(match extra {
             Extra::Wheel(wheel) => Output::Wheel(wheel),
             Extra::Button(code) => Output::Click(code),
@@ -171,7 +183,11 @@ impl Machine {
         if !shown.is_empty() {
             out.push(Output::Update(shown.clone()));
         }
-        self.state = State::Gesturing { rec, shown };
+        self.state = State::Gesturing {
+            rec,
+            shown,
+            claimed: false,
+        };
         out
     }
 
@@ -236,11 +252,11 @@ mod tests {
     }
 
     #[test]
-    fn tiny_gesture_ends_empty() {
+    fn click_while_moving_is_still_a_click() {
         let mut m = machine();
         m.press(ms(0));
-        m.motion(9.0, 0.0);
-        assert_eq!(m.release(), [End(Stroke::default())]);
+        assert_eq!(m.motion(9.0, 0.0), [Begin], "the trail shows");
+        assert_eq!(m.release(), [Cancel, Press, Release], "but nothing was drawn");
     }
 
     #[test]

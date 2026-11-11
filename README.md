@@ -242,7 +242,9 @@ Most answers are in the log: `journalctl --user -u mousewand -f`, or run `mousew
 
 **No trail.** On GNOME, log out and back in once after the first start. On X11, mousewand needs picom or another compositing manager. Anywhere else, look for `no trail:` in the log; the trail needs a working GPU driver.
 
-**A dot of trail flashes now and then, or gestures start when I meant to click.** The trigger went down while the mouse was moving, often a thumb brushing a side button: past `threshold` px, that's a gesture, and one too short to be a stroke shows as a dot. A still click passes through as a click, and holding still for `hold_ms` makes it a normal press, for middle-drag and autoscroll. Raise `threshold` if it happens often.
+**Gestures start when I meant to click or drag.** A click stays a click unless you draw a stroke, even if the mouse was moving, and holding still for `hold_ms` makes it a normal press, for middle-drag and autoscroll. If quick flicks still turn into strokes, raise `min_segment`.
+
+**Rings pulse around the cursor as I draw.** A repeating gesture took over, and each ring is one more repeat. It takes over as soon as its stroke is drawn, so a one-direction one, like the example's `9` (↗) alt-tab, catches every stroke that starts that way. Give it a longer stroke, or remove it if your desktop doesn't use alt+Tab.
 
 **My mouse settings stopped applying.** Your compositor now sees one virtual mouse, "mousewand virtual mouse". Apply per-device settings, like a custom acceleration profile, to it instead.
 
