@@ -54,11 +54,11 @@ impl Daemon {
             Output::Motion(dx, dy) => self.run(|s| s.motion(dx, dy)),
             Output::Wheel(wheel) => self.run(|s| s.wheel(wheel)),
             Output::Click(button) => self.run(|s| s.click(button)),
-            Output::End(stroke) => {
+            Output::End(stroke, path) => {
                 if let Some(active) = &mut self.active {
                     active.stroke = stroke.clone();
                 }
-                self.run(|s| s.end(&stroke));
+                self.run(|s| s.end(&stroke, &path));
                 self.show_hint(true);
                 let matched = self.active.take().is_some_and(|a| a.session.matched());
                 if !matched && !stroke.is_empty() {
@@ -231,7 +231,7 @@ fn spawn(command: &str, window: &Window) -> anyhow::Result<()> {
 
 fn not_found(command: &str) -> String {
     if command == "mousewand-settings" {
-        return "Drawing an M opens the settings app, mousewand-settings, which isn't installed. \
+        return "Drawing a circle opens the settings app, mousewand-settings, which isn't installed. \
                 The README's Settings app section shows how to build it."
             .into();
     }

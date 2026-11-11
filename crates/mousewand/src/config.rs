@@ -21,22 +21,32 @@ pub fn dir() -> anyhow::Result<PathBuf> {
     Ok(base.join("mousewand"))
 }
 
-/// Loads `config.toml` and `apps/*.toml`. Missing files mean defaults.
+/// Loads `config.toml`, `apps/*.toml` and `shapes/*.toml`. Missing files
+/// mean defaults.
 pub fn load(dir: &Path) -> anyhow::Result<Config> {
     let main = read_optional(&dir.join("config.toml"))?;
-    let mut apps = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(dir.join("apps")) {
+    let apps = toml_files(&dir.join("apps"))?;
+    let shapes = toml_files(&dir.join("shapes"))?;
+    let mut config = Config::parse(&main, &apps, &shapes).map_err(anyhow::Error::msg)?;
+    config.theme = theme(dir, &config.settings.theme)?;
+    Ok(config)
+}
+
+/// Each `*.toml` in `dir` as `(file stem, text)`, sorted. No directory is
+/// no files.
+fn toml_files(dir: &Path) -> anyhow::Result<Vec<(String, String)>> {
+    let mut files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
         for path in entries.filter_map(|e| Some(e.ok()?.path())) {
             if path.extension().is_some_and(|ext| ext == "toml") {
                 let stem = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
-                apps.push((stem, std::fs::read_to_string(&path)?));
+                let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+                files.push((stem, text));
             }
         }
     }
-    apps.sort();
-    let mut config = Config::parse(&main, &apps).map_err(anyhow::Error::msg)?;
-    config.theme = theme(dir, &config.settings.theme)?;
-    Ok(config)
+    files.sort();
+    Ok(files)
 }
 
 /// `themes/<name>.toml`. "default" is built in, unless that file exists.

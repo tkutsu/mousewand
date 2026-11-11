@@ -346,6 +346,7 @@ mod tests {
             action = { keys = "ctrl+w" }
             "#,
             &[],
+            &[],
         )
         .unwrap();
         let stroke: Stroke = "D".parse().unwrap();

@@ -1,12 +1,14 @@
 //! What one gesture fires, given the gestures for the window it started on.
 //!
-//! Oneshot strokes fire on release. Repeat and hold strokes fire as soon as
+//! Oneshot strokes fire on release, and so do shapes, when no stroke
+//! matches what was drawn. Repeat and hold strokes fire as soon as
 //! they match and then lock: recognition stops, and every `step` of motion
 //! in the stroke's last direction, and every wheel notch, fires again.
 //! Wheel and click gestures fire on each notch or click.
 
 use crate::config::{Action, Gesture, Input, Kind, Wheel};
 use crate::keys::Combo;
+use crate::shape::{self, Point};
 use crate::stroke::{Dir, Stroke};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -115,8 +117,9 @@ impl Session {
         self.fire_once(&Input::Click(button))
     }
 
-    /// The trigger was released with this final stroke.
-    pub fn end(&mut self, stroke: &Stroke) -> Vec<Fire> {
+    /// The trigger was released with this final stroke and path. A stroke
+    /// that matches wins, being exact; else the shape the path looks like.
+    pub fn end(&mut self, stroke: &Stroke, path: &[Point]) -> Vec<Fire> {
         if self.locked.is_some() {
             return self.cancel();
         }
@@ -124,7 +127,18 @@ impl Session {
         if self.fired || stroke.is_empty() {
             return Vec::new();
         }
-        self.fire_once(&Input::Stroke(stroke.clone()))
+        let input = Input::Stroke(stroke.clone());
+        if self.find(&input).is_some() {
+            return self.fire_once(&input);
+        }
+        let shapes = self.gestures.iter().filter_map(|g| match &g.input {
+            Input::Shape(shape) => Some(shape),
+            _ => None,
+        });
+        match shape::recognize(shapes, path).cloned() {
+            Some(shape) => self.fire_once(&Input::Shape(shape)),
+            None => Vec::new(),
+        }
     }
 
     /// Ends the gesture without firing; releases held keys.
@@ -198,7 +212,7 @@ mod tests {
     "#;
 
     fn session() -> Session {
-        Session::new(Config::parse(GESTURES, &[]).unwrap().gestures)
+        Session::new(Config::parse(GESTURES, &[], &[]).unwrap().gestures)
     }
 
     fn s(stroke: &str) -> Stroke {
@@ -218,14 +232,29 @@ mod tests {
         let mut session = session();
         assert_eq!(session.stroke(&s("L")), []);
         assert!(!session.matched());
-        assert_eq!(session.end(&s("L")), [keys("alt+Left")]);
+        assert_eq!(session.end(&s("L"), &[]), [keys("alt+Left")]);
         assert!(session.matched());
+    }
+
+    #[test]
+    fn shapes_fire_when_no_stroke_matches() {
+        let circle: Vec<Point> = (0..=40)
+            .map(|i| (i as f64 / 40.0 * std::f64::consts::TAU).sin_cos())
+            .map(|(y, x)| (100.0 * x, 60.0 * y))
+            .collect();
+        let settings = Fire::Run(Action::Command("mousewand-settings".into()));
+        let gestures = Config::parse(GESTURES, &[], &[]).unwrap().gestures_for("x");
+        let mut session = Session::new(gestures.clone());
+        assert_eq!(session.end(&s("L1D3R9U7"), &circle), [settings]);
+        // "L" is bound, so it wins whatever the path looks like.
+        let mut session = Session::new(gestures);
+        assert_eq!(session.end(&s("L"), &circle), [keys("alt+Left")]);
     }
 
     #[test]
     fn unknown_stroke_fires_nothing() {
         let mut session = session();
-        assert_eq!(session.end(&s("DR")), []);
+        assert_eq!(session.end(&s("DR"), &[]), []);
         assert!(!session.matched());
     }
 
@@ -243,7 +272,7 @@ mod tests {
         // Once locked, the stroke no longer matters.
         assert_eq!(session.stroke(&s("UR")), []);
         assert_eq!(session.wheel(Wheel::Up), [keys("ctrl+Tab")]);
-        assert_eq!(session.end(&s("UR")), []);
+        assert_eq!(session.end(&s("UR"), &[]), []);
     }
 
     #[test]
@@ -252,7 +281,7 @@ mod tests {
         let alt: Combo = "alt".parse().unwrap();
         assert_eq!(session.stroke(&s("R")), [Fire::Hold(alt.clone()), keys("Tab")]);
         assert_eq!(session.motion(60.0, 0.0), [keys("Tab")]);
-        assert_eq!(session.end(&s("R")), [Fire::Release(alt.clone())]);
+        assert_eq!(session.end(&s("R"), &[]), [Fire::Release(alt.clone())]);
         assert_eq!(session.cancel(), [], "keys are released only once");
 
         let mut session = self::session();
@@ -268,6 +297,6 @@ mod tests {
         assert_eq!(session.wheel(Wheel::Up), []);
         assert_eq!(session.click(crate::config::BTN_RIGHT), [command("rocked")]);
         assert_eq!(session.stroke(&s("U")), [], "no repeat after a wheel gesture");
-        assert_eq!(session.end(&s("L")), []);
+        assert_eq!(session.end(&s("L"), &[]), []);
     }
 }

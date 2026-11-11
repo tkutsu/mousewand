@@ -6,6 +6,7 @@ pub mod hint;
 pub mod keys;
 pub mod machine;
 pub mod session;
+pub mod shape;
 pub mod stroke;
 pub mod trail;
 

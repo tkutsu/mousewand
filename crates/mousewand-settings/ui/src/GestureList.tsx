@@ -1,13 +1,18 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { newGesture, type Gesture } from "./api";
 import { arrows, comboOf } from "./keys";
+import ShapePad from "./ShapePad";
 
 type Props = {
   gestures: Gesture[];
+  /** The shapes a gesture can use. */
+  shapes: string[];
   onChange: (gestures: Gesture[]) => void;
+  /** A shape was drawn and saved. */
+  onNewShape: (name: string) => void;
 };
 
-export default function GestureList({ gestures, onChange }: Props) {
+export default function GestureList({ gestures, shapes, onChange, onNewShape }: Props) {
   const update = (i: number, patch: Partial<Gesture>) =>
     onChange(gestures.map((g, j) => (j === i ? { ...g, ...patch } : g)));
   const remove = (i: number) => onChange(gestures.filter((_, j) => j !== i));
@@ -18,7 +23,14 @@ export default function GestureList({ gestures, onChange }: Props) {
         <p className="py-6 text-center text-sm text-zinc-500">No gestures yet.</p>
       )}
       {gestures.map((g, i) => (
-        <Row key={i} gesture={g} onChange={(patch) => update(i, patch)} onRemove={() => remove(i)} />
+        <Row
+          key={i}
+          gesture={g}
+          shapes={shapes}
+          onChange={(patch) => update(i, patch)}
+          onNewShape={onNewShape}
+          onRemove={() => remove(i)}
+        />
       ))}
       <button
         className="button self-start text-accent hover:bg-accent/10"
@@ -32,13 +44,18 @@ export default function GestureList({ gestures, onChange }: Props) {
 
 function Row({
   gesture: g,
+  shapes,
   onChange,
+  onNewShape,
   onRemove,
 }: {
   gesture: Gesture;
+  shapes: string[];
   onChange: (patch: Partial<Gesture>) => void;
+  onNewShape: (name: string) => void;
   onRemove: () => void;
 }) {
+  const [drawing, setDrawing] = useState(false);
   const continuous = g.input === "stroke" && g.kind !== "oneshot";
   return (
     <div className="flex flex-wrap items-end gap-2 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/60">
@@ -48,11 +65,13 @@ function Row({
           value={g.input}
           onChange={(e) => {
             const input = e.target.value as Gesture["input"];
-            const value = input === "stroke" ? "" : input === "wheel" ? "up" : "right";
+            const value = { stroke: "", shape: shapes[0] ?? "circle", wheel: "up", click: "right" }[input];
             onChange({ input, value, kind: "oneshot", step: null, hold: null });
+            setDrawing(false);
           }}
         >
           <option value="stroke">Stroke</option>
+          <option value="shape">Shape</option>
           <option value="wheel">Wheel</option>
           <option value="click">Click</option>
         </select>
@@ -71,6 +90,20 @@ function Row({
               {arrows(g.value)}
             </span>
           </div>
+        </Field>
+      )}
+      {g.input === "shape" && (
+        <Field label="Shape">
+          <select
+            className="field"
+            value={drawing ? "" : g.value}
+            onChange={(e) => (e.target.value ? onChange({ value: e.target.value }) : setDrawing(true))}
+          >
+            {shapes.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+            <option value="">Draw a new one…</option>
+          </select>
         </Field>
       )}
       {g.input === "wheel" && (
@@ -165,6 +198,17 @@ function Row({
       >
         ✕
       </button>
+
+      {g.input === "shape" && drawing && (
+        <ShapePad
+          onSaved={(name) => {
+            onNewShape(name);
+            onChange({ value: name });
+            setDrawing(false);
+          }}
+          onCancel={() => setDrawing(false)}
+        />
+      )}
     </div>
   );
 }

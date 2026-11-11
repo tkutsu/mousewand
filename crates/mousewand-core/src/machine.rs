@@ -9,6 +9,7 @@
 use std::time::Duration;
 
 use crate::config::{Settings, Wheel};
+use crate::shape::Point;
 use crate::stroke::{Recognizer, Stroke};
 
 #[derive(Clone, PartialEq, Debug)]
@@ -21,8 +22,9 @@ pub enum Output {
     Begin,
     /// The recognized stroke changed mid-gesture.
     Update(Stroke),
-    /// The trigger was released and the gesture is over.
-    End(Stroke),
+    /// The trigger was released and the gesture is over: its stroke, and
+    /// its path for shapes.
+    End(Stroke, Vec<Point>),
     /// The gesture was abandoned (e.g. its mouse was unplugged): fire nothing.
     Cancel,
     /// Pointer motion during a gesture, for repeat steps.
@@ -110,7 +112,7 @@ impl Machine {
             } if rec.stroke().is_empty() => {
                 vec![Output::Cancel, Output::Press, Output::Release]
             }
-            State::Gesturing { rec, .. } => vec![Output::End(rec.stroke())],
+            State::Gesturing { rec, .. } => vec![Output::End(rec.stroke(), rec.path().to_vec())],
         }
     }
 
@@ -215,6 +217,17 @@ mod tests {
         Machine::new(&Settings::default())
     }
 
+    /// The stroke, if the outputs are just the end of a gesture.
+    fn ended(out: Vec<Output>) -> Option<Stroke> {
+        match out.as_slice() {
+            [End(stroke, path)] => {
+                assert!(!path.is_empty());
+                Some(stroke.clone())
+            }
+            _ => None,
+        }
+    }
+
     #[test]
     fn quick_click_is_replayed() {
         let mut m = machine();
@@ -248,7 +261,7 @@ mod tests {
             .collect();
         assert_eq!(updates, [Update("L".parse().unwrap())]);
         assert_eq!(m.motion(-1.0, 2.0), [Motion(-1.0, 2.0)]);
-        assert_eq!(m.release(), [End("L".parse().unwrap())]);
+        assert_eq!(ended(m.release()), Some("L".parse().unwrap()));
     }
 
     #[test]
@@ -285,7 +298,7 @@ mod tests {
             "a pending press becomes a gesture"
         );
         assert_eq!(m.claim(Extra::Button(0x110)), Some(vec![Click(0x110)]));
-        assert_eq!(m.release(), [End(Stroke::default())], "no click replay");
+        assert_eq!(ended(m.release()), Some(Stroke::default()), "no click replay");
 
         m.press(ms(0));
         m.tick(ms(300));

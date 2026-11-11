@@ -3,8 +3,8 @@
 //! `config.toml` holds settings, the gestures every app gets unless it
 //! overrides them, the `[global]` gestures no app overrides, and the `[hint]`
 //! style. Each `apps/<name>.toml` holds the gestures for one app, matched by
-//! window class. Parsing is pure: the caller reads the files and passes their
-//! text in.
+//! window class, and each `shapes/<name>.toml` a shape taught by drawing it.
+//! Parsing is pure: the caller reads the files and passes their text in.
 
 use std::fmt;
 use std::str::FromStr;
@@ -12,6 +12,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Deserializer, de};
 
 use crate::keys::Combo;
+use crate::shape::{self, Shape};
 use crate::stroke::Stroke;
 
 #[derive(Clone, Debug, Default)]
@@ -26,6 +27,8 @@ pub struct Config {
     pub hint: HintStyle,
     /// Set by the caller from `themes/<settings.theme>.toml`.
     pub theme: Theme,
+    /// The built-in shapes and the taught ones.
+    pub shapes: Vec<Shape>,
 }
 
 /// How the trail looks. Every field is optional.
@@ -237,6 +240,8 @@ impl Gesture {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Input {
     Stroke(Stroke),
+    /// A drawing that looks like this shape, matched on release.
+    Shape(Shape),
     /// One wheel notch.
     Wheel(Wheel),
     /// A click of another button, left or right.
@@ -284,6 +289,7 @@ pub enum Action {
 #[serde(deny_unknown_fields)]
 struct RawGesture {
     stroke: Option<String>,
+    shape: Option<String>,
     wheel: Option<String>,
     click: Option<String>,
     repeat: Option<bool>,
@@ -308,21 +314,23 @@ impl TryFrom<RawGesture> for Gesture {
     type Error = String;
 
     fn try_from(raw: RawGesture) -> Result<Gesture, String> {
-        let input = match (raw.stroke, raw.wheel, raw.click) {
-            (Some(stroke), None, None) => Input::Stroke(stroke.parse()?),
-            (None, Some(wheel), None) => Input::Wheel(match wheel.to_ascii_lowercase().as_str() {
+        let input = match (raw.stroke, raw.shape, raw.wheel, raw.click) {
+            (Some(stroke), None, None, None) => Input::Stroke(stroke.parse()?),
+            // Checked against the shapes there are once every file is read.
+            (None, Some(name), None, None) => Input::Shape(Shape::unresolved(&name)),
+            (None, None, Some(wheel), None) => Input::Wheel(match wheel.to_ascii_lowercase().as_str() {
                 "up" => Wheel::Up,
                 "down" => Wheel::Down,
                 "left" => Wheel::Left,
                 "right" => Wheel::Right,
                 _ => return Err(format!("unknown wheel {wheel:?}: use up, down, left or right")),
             }),
-            (None, None, Some(button)) => Input::Click(match button.to_ascii_lowercase().as_str() {
+            (None, None, None, Some(button)) => Input::Click(match button.to_ascii_lowercase().as_str() {
                 "left" => BTN_LEFT,
                 "right" => BTN_RIGHT,
                 _ => return Err(format!("unknown click {button:?}: use left or right")),
             }),
-            _ => return Err("a gesture needs exactly one of stroke, wheel or click".into()),
+            _ => return Err("a gesture needs exactly one of stroke, shape, wheel or click".into()),
         };
         let RawAction {
             keys,
@@ -525,12 +533,16 @@ struct AppFile {
 }
 
 impl Config {
-    /// Parses `config.toml` and the app files, given as `(file stem, text)`.
-    /// An app file without `match` matches the class named by its stem.
-    pub fn parse(main: &str, apps: &[(String, String)]) -> Result<Config, String> {
+    /// Parses `config.toml`, the app files and the shape files, each given
+    /// as `(file stem, text)`. An app file without `match` matches the
+    /// class named by its stem.
+    pub fn parse(main: &str, apps: &[(String, String)], shapes: &[(String, String)]) -> Result<Config, String> {
+        let shapes = shapes_of(shapes)?;
         let mut main: MainFile = toml::from_str(main).map_err(|e| format!("config.toml: {e}"))?;
         let in_main = |e: String| format!("config.toml: {e}");
         main.hint.check().map_err(in_main)?;
+        resolve(&mut main.gestures, &shapes).map_err(in_main)?;
+        resolve(&mut main.global.gestures, &shapes).map_err(in_main)?;
         let shared = match main.global.trigger {
             Some(trigger) if trigger == main.settings.trigger => {
                 return Err(in_main(
@@ -552,7 +564,8 @@ impl Config {
         let apps = apps
             .iter()
             .map(|(stem, text)| {
-                let file: AppFile = toml::from_str(text).map_err(|e| format!("apps/{stem}.toml: {e}"))?;
+                let mut file: AppFile = toml::from_str(text).map_err(|e| format!("apps/{stem}.toml: {e}"))?;
+                resolve(&mut file.gestures, &shapes).map_err(|e| format!("apps/{stem}.toml: {e}"))?;
                 let classes = if file.classes.is_empty() {
                     vec![stem.clone()]
                 } else {
@@ -579,6 +592,7 @@ impl Config {
             global,
             hint: main.hint,
             theme: Theme::default(),
+            shapes,
         })
     }
 
@@ -596,10 +610,15 @@ impl Config {
             None => self.global.clone(),
         };
         gestures.extend(merged(app.map_or(&[], |a| &a.gestures), &self.gestures));
-        for settings in SETTINGS_STROKES.map(settings_gesture) {
-            if !gestures.iter().any(|g| g.input == settings.input) {
-                gestures.push(settings);
-            }
+        let settings = self
+            .shapes
+            .iter()
+            .find(|s| s.name == SETTINGS_SHAPE)
+            .map(settings_gesture);
+        if let Some(settings) = settings
+            && !gestures.iter().any(|g| g.input == settings.input)
+        {
+            gestures.push(settings);
         }
         gestures
     }
@@ -610,18 +629,47 @@ impl Config {
     }
 }
 
-/// The strokes that open the settings app on the window under the cursor:
-/// an M, drawn with straight sides (↑↘↗↓) or all in diagonals (↗↘↗↘).
-pub const SETTINGS_STROKES: [&str; 2] = ["U39D", "9393"];
+/// The shape that opens the settings app on the window under the cursor.
+pub const SETTINGS_SHAPE: &str = "circle";
 
 /// Opens `mousewand-settings`, which reads the window class from `MOUSEWAND_CLASS`.
-fn settings_gesture(stroke: &str) -> Gesture {
+fn settings_gesture(shape: &Shape) -> Gesture {
     Gesture {
-        input: Input::Stroke(stroke.parse().expect("a valid stroke")),
+        input: Input::Shape(shape.clone()),
         kind: Kind::Oneshot,
         action: Action::Command("mousewand-settings".into()),
         name: Some("mousewand settings".into()),
     }
+}
+
+/// The built-in shapes no file replaces, then the taught ones.
+fn shapes_of(files: &[(String, String)]) -> Result<Vec<Shape>, String> {
+    let taught = files
+        .iter()
+        .map(|(name, text)| Shape::parse(name, text))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut shapes: Vec<Shape> = shape::BUILT_IN
+        .into_iter()
+        .filter(|&name| !taught.iter().any(|s| s.name == name))
+        .filter_map(Shape::built_in)
+        .collect();
+    shapes.extend(taught);
+    Ok(shapes)
+}
+
+/// Swaps each gesture's shape name for the shape.
+fn resolve(gestures: &mut [Gesture], shapes: &[Shape]) -> Result<(), String> {
+    for gesture in gestures {
+        if let Input::Shape(named) = &mut gesture.input {
+            *named = shapes.iter().find(|s| *s == named).cloned().ok_or_else(|| {
+                format!(
+                    "unknown shape {:?}: use circle, or draw it in the settings app to make shapes/{}.toml",
+                    named.name, named.name
+                )
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn merged(app: &[Gesture], global: &[Gesture]) -> Vec<Gesture> {
@@ -647,6 +695,7 @@ fn check_global(global: &[Gesture], others: &[Gesture]) -> Result<(), String> {
 fn describe(input: &Input) -> String {
     match input {
         Input::Stroke(stroke) => format!("stroke {stroke}"),
+        Input::Shape(shape) => format!("shape {}", shape.name),
         Input::Wheel(wheel) => format!("wheel {wheel:?}").to_lowercase(),
         Input::Click(BTN_LEFT) => "click left".into(),
         Input::Click(_) => "click right".into(),
@@ -730,6 +779,7 @@ mod tests {
         Config::parse(
             MAIN,
             &[("firefox".into(), FIREFOX.into()), ("kitty".into(), String::new())],
+            &[],
         )
         .unwrap()
     }
@@ -791,7 +841,7 @@ mod tests {
             stroke = "R"
             action = { keys = "Tab", hold = "alt" }
         "#;
-        let c = Config::parse(hold, &[]).unwrap();
+        let c = Config::parse(hold, &[], &[]).unwrap();
         assert_eq!(
             c.gestures[0].kind,
             Kind::Hold {
@@ -802,18 +852,41 @@ mod tests {
     }
 
     #[test]
-    fn settings_gesture_is_built_in_unless_taken() {
+    fn settings_gesture_is_a_circle_unless_taken() {
+        let circle = |c: &Config| Input::Shape(c.shapes.iter().find(|s| s.name == "circle").unwrap().clone());
         let opens_settings = |c: &Config, class: &str| {
             c.gestures_for(class)
                 .iter()
-                .any(|g| g.input == stroke("9393") && g.action == Action::Command("mousewand-settings".into()))
+                .any(|g| g.input == circle(c) && g.action == Action::Command("mousewand-settings".into()))
         };
         assert!(opens_settings(&config(), "kitty"));
-        assert!(config().gestures_for("kitty").iter().any(|g| g.input == stroke("U39D")));
-        let taken = "[[gesture]]\nstroke = \"9393\"\naction = { keys = \"a\" }";
-        let c = Config::parse("", &[("kitty".into(), taken.into())]).unwrap();
+        let taken = "[[gesture]]\nshape = \"circle\"\naction = { keys = \"a\" }";
+        let c = Config::parse("", &[("kitty".into(), taken.into())], &[]).unwrap();
         assert!(!opens_settings(&c, "kitty"));
         assert!(opens_settings(&c, "firefox"));
+    }
+
+    #[test]
+    fn shapes_are_built_in_or_taught() {
+        let gesture = |shape: &str| format!("[[gesture]]\nshape = \"{shape}\"\naction = {{ keys = \"a\" }}");
+        let triangle = (
+            "triangle".to_string(),
+            "examples = [[[0, 0], [100, 0], [50, 90], [0, 0]]]".to_string(),
+        );
+        let c = Config::parse(&gesture("triangle"), &[], std::slice::from_ref(&triangle)).unwrap();
+        let names: Vec<&str> = c.shapes.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["circle", "triangle"]);
+        assert!(matches!(&c.gestures[0].input, Input::Shape(s) if s.name == "triangle"));
+
+        let bad = Config::parse(&gesture("star"), &[], &[]).unwrap_err();
+        assert!(
+            bad.contains("config.toml") && bad.contains("unknown shape \"star\""),
+            "{bad}"
+        );
+        let bad = Config::parse("", &[("x".into(), gesture("star"))], &[triangle]).unwrap_err();
+        assert!(bad.contains("apps/x.toml"), "{bad}");
+        let repeat = Config::parse(&gesture("circle").replace("action", "repeat = true\naction"), &[], &[]);
+        assert!(repeat.unwrap_err().contains("only strokes"));
     }
 
     #[test]
@@ -823,7 +896,7 @@ mod tests {
 
     #[test]
     fn errors_name_the_file() {
-        let bad = Config::parse("trigger = \"left\"", &[]).unwrap_err();
+        let bad = Config::parse("trigger = \"left\"", &[], &[]).unwrap_err();
         assert!(bad.contains("config.toml") && bad.contains("normal clicks"), "{bad}");
         let bad = Config::parse(
             "",
@@ -831,15 +904,17 @@ mod tests {
                 "x".into(),
                 "[[gesture]]\nstroke = \"L\"\naction = { keys = \"ctrl+wat\" }".into(),
             )],
+            &[],
         )
         .unwrap_err();
         assert!(bad.contains("apps/x.toml") && bad.contains("wat"), "{bad}");
-        assert!(Config::parse("thresold = 3", &[]).is_err());
+        assert!(Config::parse("thresold = 3", &[], &[]).is_err());
     }
 
     #[test]
     fn invalid_gestures() {
-        let bad = |g: &str| Config::parse(&format!("[[gesture]]\n{g}\naction = {{ keys = \"a\" }}"), &[]).unwrap_err();
+        let bad =
+            |g: &str| Config::parse(&format!("[[gesture]]\n{g}\naction = {{ keys = \"a\" }}"), &[], &[]).unwrap_err();
         assert!(bad("").contains("exactly one"));
         assert!(bad("stroke = \"L\"\nwheel = \"up\"").contains("exactly one"));
         assert!(bad("wheel = \"up\"\nrepeat = true").contains("only strokes"));
@@ -849,7 +924,7 @@ mod tests {
         assert!(bad("stroke = \"L\"\nkind = \"repeat\"").contains("unknown field"));
         assert!(bad("rocker = \"left\"").contains("unknown field"));
 
-        let action = |a: &str| Config::parse(&format!("[[gesture]]\nstroke = \"L\"\naction = {a}"), &[]);
+        let action = |a: &str| Config::parse(&format!("[[gesture]]\nstroke = \"L\"\naction = {a}"), &[], &[]);
         assert!(
             action("{ keys = \"a\", command = \"b\" }")
                 .unwrap_err()
@@ -862,7 +937,11 @@ mod tests {
         );
         assert!(action("{ keys = \"a\", hold = \"alt\" }").is_ok());
         let no_repeat = "[[gesture]]\nstroke = \"L\"\nrepeat = false\naction = { keys = \"a\", hold = \"alt\" }";
-        assert!(Config::parse(no_repeat, &[]).unwrap_err().contains("always repeats"));
+        assert!(
+            Config::parse(no_repeat, &[], &[])
+                .unwrap_err()
+                .contains("always repeats")
+        );
     }
 
     #[test]
@@ -903,7 +982,7 @@ mod tests {
             name = "Next workspace"
             action = { dispatch = "workspace +1" }
         "#;
-        let c = Config::parse(main, &[]).unwrap();
+        let c = Config::parse(main, &[], &[]).unwrap();
         assert_eq!(c.settings.global_trigger, None);
         let gestures = c.gestures_for("firefox");
         assert_eq!(gestures[0].label(), "Next workspace");
@@ -911,7 +990,7 @@ mod tests {
         assert!(c.global_gestures().len() == 1);
 
         let clash = "[[gesture]]\nstroke = \"R\"\naction = { keys = \"b\" }";
-        let bad = Config::parse(main, &[("kitty".into(), clash.into())]).unwrap_err();
+        let bad = Config::parse(main, &[("kitty".into(), clash.into())], &[]).unwrap_err();
         assert!(bad.contains("apps/kitty.toml") && bad.contains("[global]"), "{bad}");
     }
 
@@ -929,7 +1008,7 @@ mod tests {
             stroke = "R"
             action = { keys = "alt+Right" }
         "#;
-        let c = Config::parse(main, &[]).unwrap();
+        let c = Config::parse(main, &[], &[]).unwrap();
         assert_eq!(c.settings.global_trigger, Some(Trigger(0x114)));
         // The same stroke is free for the other trigger.
         assert_eq!(
@@ -937,7 +1016,7 @@ mod tests {
             Some(Action::Keys("alt+Right".parse().unwrap()))
         );
         assert_eq!(c.global_gestures()[0].action, Action::Dispatch("workspace +1".into()));
-        let same = Config::parse("[global]\ntrigger = \"middle\"", &[]).unwrap_err();
+        let same = Config::parse("[global]\ntrigger = \"middle\"", &[], &[]).unwrap_err();
         assert!(same.contains("same trigger"), "{same}");
     }
 
@@ -954,6 +1033,7 @@ mod tests {
             stroke = "D"
             action = { command = "a very long command that goes on and on and on for a while" }
             "#,
+            &[],
             &[],
         )
         .unwrap();
@@ -977,11 +1057,11 @@ mod tests {
         assert!("top bottom".parse::<Position>().is_err());
         assert!("center center center".parse::<Position>().is_err());
         assert!(
-            Config::parse("[hint]\nopacity = 2", &[])
+            Config::parse("[hint]\nopacity = 2", &[], &[])
                 .unwrap_err()
                 .contains("opacity")
         );
-        assert!(Config::parse("[hint]\ncolour = \"#fff\"", &[]).is_err());
+        assert!(Config::parse("[hint]\ncolour = \"#fff\"", &[], &[]).is_err());
         assert_eq!(
             "#ff000080".parse::<Rgba>().unwrap(),
             Rgba([1.0, 0.0, 0.0, 128.0 / 255.0])
@@ -998,12 +1078,12 @@ mod tests {
             repeat = true
             action = { keys = "a" }
         "#;
-        assert!(Config::parse(main, &[]).is_ok());
+        assert!(Config::parse(main, &[], &[]).is_ok());
         let longer = "[[gesture]]\nstroke = \"LD\"\naction = { keys = \"b\" }";
-        let bad = Config::parse(main, &[("x".into(), longer.into())]).unwrap_err();
+        let bad = Config::parse(main, &[("x".into(), longer.into())], &[]).unwrap_err();
         assert!(bad.contains("apps/x.toml") && bad.contains("LD"), "{bad}");
         // A oneshot may prefix: it fires on release, after the whole stroke.
         let oneshot = main.replace("repeat = true\n", "");
-        assert!(Config::parse(&oneshot, &[("x".into(), longer.into())]).is_ok());
+        assert!(Config::parse(&oneshot, &[("x".into(), longer.into())], &[]).is_ok());
     }
 }

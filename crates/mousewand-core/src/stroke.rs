@@ -8,6 +8,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+use crate::shape::Point;
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Dir {
     Up,
@@ -107,7 +109,7 @@ impl FromStr for Stroke {
 /// so single-count mouse jitter can't flip it.
 const SAMPLE: f64 = 8.0;
 
-/// Turns relative motion into a stroke.
+/// Turns relative motion into a stroke, and keeps the path for shapes.
 ///
 /// Motion is cut into short samples, and consecutive samples with the same
 /// direction add up into runs, each kept as a vector. A run shorter than
@@ -119,6 +121,8 @@ pub struct Recognizer {
     min_segment: f64,
     pending: Vec2,
     runs: Vec<Vec2>,
+    /// Where each sample ended, from the press at (0, 0).
+    path: Vec<Point>,
 }
 
 type Vec2 = (f64, f64);
@@ -146,6 +150,7 @@ impl Recognizer {
             min_segment,
             pending: (0.0, 0.0),
             runs: Vec::new(),
+            path: vec![(0.0, 0.0)],
         }
     }
 
@@ -155,10 +160,17 @@ impl Recognizer {
             return;
         }
         let sample = std::mem::take(&mut self.pending);
+        let last = *self.path.last().expect("starts with the press");
+        self.path.push(add(last, sample));
         match self.runs.last_mut() {
             Some(last) if dir(*last) == dir(sample) => *last = add(*last, sample),
             _ => self.runs.push(sample),
         }
+    }
+
+    /// The motion so far as points, for [`crate::shape::recognize`].
+    pub fn path(&self) -> &[Point] {
+        &self.path
     }
 
     pub fn stroke(&self) -> Stroke {
@@ -259,6 +271,18 @@ mod tests {
     #[test]
     fn short_hook_at_the_end_is_ignored() {
         assert_eq!(draw(&[(-3.0, 0.0, 60), (0.0, 3.0, 5)]), "L");
+    }
+
+    #[test]
+    fn a_circle_of_motion_is_a_circle() {
+        use crate::shape::{Shape, recognize};
+        let mut r = Recognizer::new(30.0);
+        for i in 0..120 {
+            let (sin, cos) = (i as f64 / 120.0 * std::f64::consts::TAU).sin_cos();
+            r.push(-5.0 * sin, 4.0 * cos);
+        }
+        assert!(r.stroke().0.len() >= 6, "{}", r.stroke());
+        assert!(recognize(&[Shape::built_in("circle").unwrap()], r.path()).is_some());
     }
 
     #[test]
