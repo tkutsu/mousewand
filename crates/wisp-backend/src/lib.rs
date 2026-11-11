@@ -7,12 +7,14 @@ mod hyprland;
 mod kwin;
 mod sway;
 mod toplevel;
+mod wayfire;
 
 pub use gnome::Gnome;
 pub use hyprland::Hyprland;
 pub use kwin::KWin;
 pub use sway::Sway;
 pub use toplevel::{Flavor, Toplevels};
+pub use wayfire::Wayfire;
 
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct Window {
@@ -61,8 +63,9 @@ pub fn detect() -> anyhow::Result<Box<dyn Backend>> {
             return Ok(Box::new(Toplevels::connect(Flavor::Niri(socket))?));
         }
         Some("toplevel") => return Ok(Box::new(Toplevels::connect(Flavor::Other)?)),
+        Some("wayfire") => return Ok(Box::new(Wayfire::connect()?)),
         Some(other) => {
-            anyhow::bail!("unknown WISP_BACKEND {other:?}: use hyprland, sway, niri, kwin, gnome or toplevel")
+            anyhow::bail!("unknown WISP_BACKEND {other:?}: use hyprland, sway, niri, wayfire, kwin, gnome or toplevel")
         }
         None => {}
     }
@@ -71,6 +74,9 @@ pub fn detect() -> anyhow::Result<Box<dyn Backend>> {
     }
     if sway::find_socket().is_some_and(|s| answers(&s)) {
         return Ok(Box::new(Sway::connect()?));
+    }
+    if wayfire::find_socket().is_some_and(|s| answers(&s)) {
+        return Ok(Box::new(Wayfire::connect()?));
     }
     if let Some(socket) = niri_socket().filter(|s| answers(s)) {
         return Ok(Box::new(Toplevels::connect(Flavor::Niri(socket))?));
