@@ -20,7 +20,8 @@ Strokes are sequences of directions: `U D L R` for up, down, left and right, and
 ```fish
 cargo install --path crates/wisp
 sudo cp dist/70-wisp.rules /etc/udev/rules.d/
-sudo udevadm control --reload; and sudo udevadm trigger
+sudo cp dist/wisp-uinput.conf /etc/modules-load.d/
+sudo modprobe uinput; and sudo udevadm control --reload; and sudo udevadm trigger
 cp dist/wisp.service ~/.config/systemd/user/
 systemctl --user enable --now wisp
 ```

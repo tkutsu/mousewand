@@ -8,7 +8,29 @@ use anyhow::{Context, bail};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use crate::{Backend, Monitor, Point, Window};
+use crate::{Backend, Target, Window};
+
+/// A point in Hyprland's global, logical coordinates.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+struct Monitor {
+    name: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+impl Monitor {
+    fn contains(&self, p: Point) -> bool {
+        p.x >= self.x && p.x < self.x + self.width && p.y >= self.y && p.y < self.y + self.height
+    }
+}
 
 pub struct Hyprland {
     socket: PathBuf,
@@ -46,7 +68,7 @@ impl Hyprland {
 
 /// `$HYPRLAND_INSTANCE_SIGNATURE` is missing when wisp runs as a service that
 /// started before Hyprland exported it, so fall back to the newest instance.
-fn find_socket() -> anyhow::Result<PathBuf> {
+pub fn find_socket() -> anyhow::Result<PathBuf> {
     let runtime = std::env::var_os("XDG_RUNTIME_DIR").context("XDG_RUNTIME_DIR is not set")?;
     let hypr = Path::new(&runtime).join("hypr");
     if let Some(sig) = std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE") {
@@ -161,19 +183,23 @@ fn topmost<'a>(clients: &'a [Client], monitors: &[HyprMonitor], p: Point) -> Opt
 }
 
 impl Backend for Hyprland {
-    fn cursor(&self) -> anyhow::Result<Point> {
+    fn pointer_target(&self) -> anyhow::Result<Target> {
         let pos: CursorPos = self.json("cursorpos")?;
-        Ok(Point { x: pos.x, y: pos.y })
-    }
-
-    fn window_at(&self, p: Point) -> anyhow::Result<Option<Window>> {
-        let clients: Vec<Client> = self.json("clients")?;
+        let p = Point { x: pos.x, y: pos.y };
         let monitors: Vec<HyprMonitor> = self.json("monitors")?;
-        Ok(topmost(&clients, &monitors, p).map(|c| Window {
-            id: c.address.clone(),
-            class: c.class.clone(),
-            title: c.title.clone(),
-        }))
+        let clients: Vec<Client> = self.json("clients")?;
+        Ok(Target {
+            window: topmost(&clients, &monitors, p).map(|c| Window {
+                id: c.address.clone(),
+                class: c.class.clone(),
+                title: c.title.clone(),
+            }),
+            monitor: monitors
+                .iter()
+                .map(HyprMonitor::logical)
+                .find(|m| m.contains(p))
+                .map(|m| m.name),
+        })
     }
 
     /// Lua-config Hyprland (0.55+) takes Lua dispatchers; older versions
@@ -184,11 +210,6 @@ impl Backend for Hyprland {
                 self.dispatch_checked(&format!("focuswindow address:{}", w.id))
                     .map_err(|_| lua)
             })
-    }
-
-    fn monitors(&self) -> anyhow::Result<Vec<Monitor>> {
-        let monitors: Vec<HyprMonitor> = self.json("monitors")?;
-        Ok(monitors.iter().map(HyprMonitor::logical).collect())
     }
 
     fn dispatch(&self, command: &str) -> anyhow::Result<()> {
