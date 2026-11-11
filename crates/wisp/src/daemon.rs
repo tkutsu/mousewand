@@ -5,15 +5,15 @@ use std::thread;
 
 use anyhow::Context;
 use wisp_backend::{Backend, Target, Window};
+use wisp_core::Trail;
 use wisp_core::{Action, Config, Fire, Output, Session};
 use wisp_input::Input;
-use wisp_overlay::Overlay;
 
 pub struct Daemon {
     pub config: Config,
     pub backend: Box<dyn Backend>,
     pub input: Input,
-    pub overlay: Option<Overlay>,
+    pub overlay: Option<Box<dyn Trail>>,
     active: Option<Active>,
 }
 
@@ -26,7 +26,7 @@ struct Active {
 }
 
 impl Daemon {
-    pub fn new(config: Config, backend: Box<dyn Backend>, input: Input, overlay: Option<Overlay>) -> Self {
+    pub fn new(config: Config, backend: Box<dyn Backend>, input: Input, overlay: Option<Box<dyn Trail>>) -> Self {
         Daemon {
             config,
             backend,
@@ -89,9 +89,9 @@ impl Daemon {
         });
     }
 
-    fn overlay(&self, f: impl FnOnce(&Overlay)) {
+    fn overlay(&self, f: impl FnOnce(&dyn Trail)) {
         if let Some(overlay) = &self.overlay {
-            f(overlay);
+            f(overlay.as_ref());
         }
     }
 

@@ -13,9 +13,11 @@ wisp detects the compositor on its own. Set `WISP_BACKEND` to `hyprland`, `sway`
 | Hyprland | ✓ | ✓ | a Hyprland dispatcher |
 | sway | the focused window; with sway's default `focus_follows_mouse` that's the one under the cursor | ✓ | a sway command, e.g. `"fullscreen toggle"` |
 | KWin | ✓, through short KWin scripts over D-Bus | ✓ | a KWin shortcut by name, e.g. `"Window Maximize"` |
-| GNOME | ✓, through wisp's Shell extension | none yet: GNOME has no layer-shell | nothing; use `keys` or `command` |
+| GNOME | ✓, through wisp's Shell extension | ✓, drawn by the extension | nothing; use `keys` or `command` |
 
 Keys and dispatchers go to the window the gesture was drawn over: wisp focuses it first.
+
+GNOME has no layer-shell, so its trail is drawn inside GNOME Shell by the extension, with Cairo instead of the GPU shader. Themes apply the same way; the glow is a close approximation.
 
 GNOME needs the extension in `dist/gnome-extension`:
 

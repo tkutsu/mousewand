@@ -74,33 +74,33 @@ impl Overlay {
         ready_rx.recv().context("overlay thread died")??;
         Ok(Overlay { tx, thread })
     }
+}
 
-    /// Stops the overlay thread and frees the GPU before the process exits;
-    /// tearing down a live Vulkan device at exit can crash the driver.
-    pub fn shutdown(self) {
-        drop(self.tx);
-        let _ = self.thread.join();
-    }
-
+impl wisp_core::Trail for Overlay {
     /// Shows the trail on the named monitor, or wherever the compositor
     /// puts it if `None`.
-    pub fn begin(&self, monitor: Option<String>) {
+    fn begin(&self, monitor: Option<String>) {
         let _ = self.tx.send(Command::Begin { monitor });
     }
 
-    /// Applies from the next gesture.
-    pub fn set_theme(&self, theme: Theme) {
-        let _ = self.tx.send(Command::Theme(theme));
-    }
-
-    /// Pulses a ring at the cursor, for each repeat step.
-    pub fn tick(&self) {
+    fn tick(&self) {
         let _ = self.tx.send(Command::Tick);
     }
 
     /// Lets clicks through and fades the trail out.
-    pub fn end(&self, matched: bool) {
+    fn end(&self, matched: bool) {
         let _ = self.tx.send(Command::End { matched });
+    }
+
+    fn set_theme(&self, theme: Theme) {
+        let _ = self.tx.send(Command::Theme(theme));
+    }
+
+    /// Stops the overlay thread and frees the GPU before the process exits;
+    /// tearing down a live Vulkan device at exit can crash the driver.
+    fn shutdown(self: Box<Self>) {
+        drop(self.tx);
+        let _ = self.thread.join();
     }
 }
 
