@@ -2,7 +2,28 @@
 
 Mouse gestures for Linux. Hold a mouse button, draw a stroke, and an action fires. Which action depends on the window under the cursor where the stroke started: "left" can go back in Firefox and switch tabs in kitty.
 
-Status: early. Works on Hyprland; other compositors come later.
+Status: early. Works on Hyprland, sway, KWin (Plasma 6) and GNOME.
+
+## Compositors
+
+wisp detects the compositor on its own. Set `WISP_BACKEND` to `hyprland`, `sway`, `kwin` or `gnome` to choose.
+
+| | Window under the cursor | Trail | `dispatch` runs |
+|---|---|---|---|
+| Hyprland | ✓ | ✓ | a Hyprland dispatcher |
+| sway | the focused window; with sway's default `focus_follows_mouse` that's the one under the cursor | ✓ | a sway command, e.g. `"fullscreen toggle"` |
+| KWin | ✓, through short KWin scripts over D-Bus | ✓ | a KWin shortcut by name, e.g. `"Window Maximize"` |
+| GNOME | ✓, through wisp's Shell extension | none yet: GNOME has no layer-shell | nothing; use `keys` or `command` |
+
+Keys and dispatchers go to the window the gesture was drawn over: wisp focuses it first.
+
+GNOME needs the extension in `dist/gnome-extension`:
+
+```fish
+cp -r dist/gnome-extension/wisp@tkutsu.github.io ~/.local/share/gnome-shell/extensions/
+# log out and back in, then:
+gnome-extensions enable wisp@tkutsu.github.io
+```
 
 ## How it behaves
 

@@ -1,10 +1,12 @@
 //! What wisp needs from the compositor, behind one trait so each compositor
 //! gets its own implementation.
 
+mod gnome;
 mod hyprland;
 mod kwin;
 mod sway;
 
+pub use gnome::Gnome;
 pub use hyprland::Hyprland;
 pub use kwin::KWin;
 pub use sway::Sway;
@@ -36,16 +38,17 @@ pub trait Backend: Send {
     fn dispatch(&self, command: &str) -> anyhow::Result<()>;
 }
 
-/// Picks the backend for the running compositor: `$WISP_BACKEND` if set
-/// (hyprland or sway), else whichever compositor's socket answers. Sockets
-/// are found without the compositor's environment, so this works from a
-/// service started before the compositor exported it.
+/// Picks the backend for the running compositor: `$WISP_BACKEND` if set,
+/// else whichever compositor answers on its socket or D-Bus name. Neither
+/// needs the compositor's environment, so this works from a service started
+/// before the compositor exported it.
 pub fn detect() -> anyhow::Result<Box<dyn Backend>> {
     match std::env::var("WISP_BACKEND").ok().as_deref() {
         Some("hyprland") => return Ok(Box::new(Hyprland::connect()?)),
         Some("sway") => return Ok(Box::new(Sway::connect()?)),
         Some("kwin") => return Ok(Box::new(KWin::connect()?)),
-        Some(other) => anyhow::bail!("unknown WISP_BACKEND {other:?}: use hyprland, sway or kwin"),
+        Some("gnome") => return Ok(Box::new(Gnome::connect()?)),
+        Some(other) => anyhow::bail!("unknown WISP_BACKEND {other:?}: use hyprland, sway, kwin or gnome"),
         None => {}
     }
     if hyprland::find_socket().is_ok_and(|s| answers(&s)) {
@@ -54,13 +57,28 @@ pub fn detect() -> anyhow::Result<Box<dyn Backend>> {
     if sway::find_socket().is_some_and(|s| answers(&s)) {
         return Ok(Box::new(Sway::connect()?));
     }
-    if kwin::running() {
-        return Ok(Box::new(KWin::connect()?));
+    if let Ok(bus) = zbus::blocking::Connection::session() {
+        if has_owner(&bus, "org.kde.KWin") {
+            return Ok(Box::new(KWin::connect()?));
+        }
+        // Without wisp's extension, this fails with how to install it.
+        if has_owner(&bus, gnome::NAME) || has_owner(&bus, "org.gnome.Shell") {
+            return Ok(Box::new(Gnome::connect()?));
+        }
     }
-    anyhow::bail!("no supported compositor found (Hyprland, sway or KWin)")
+    anyhow::bail!("no supported compositor found (Hyprland, sway, KWin or GNOME)")
 }
 
 /// A socket file can outlive its compositor.
 fn answers(socket: &std::path::Path) -> bool {
     std::os::unix::net::UnixStream::connect(socket).is_ok()
+}
+
+/// Whether a D-Bus name has an owner on the session bus.
+fn has_owner(bus: &zbus::blocking::Connection, name: &str) -> bool {
+    let Ok(dbus) = zbus::blocking::fdo::DBusProxy::new(bus) else {
+        return false;
+    };
+    let Ok(name) = name.try_into() else { return false };
+    dbus.name_has_owner(name).unwrap_or(false)
 }
