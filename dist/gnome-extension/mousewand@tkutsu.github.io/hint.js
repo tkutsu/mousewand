@@ -61,7 +61,7 @@ export class Hint {
         const column = Math.max(0, ...next.map(r => [...r.arrows].filter(c => c !== ' ').length)) * s.size * 0.82 * 1.05;
 
         this._box = new St.BoxLayout({
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             reactive: false,
             style: `background-color: ${css(s.background)}; border-radius: ${s.radius}px; ` +
                 `padding: ${s.padding}px; font-family: "${s.font}"; spacing: ${s.size * 0.12}px;`,
