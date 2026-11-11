@@ -5608,6 +5608,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "wisp-core",
  "zbus",
 ]
 

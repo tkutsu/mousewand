@@ -9,7 +9,7 @@ use std::thread;
 
 use anyhow::Context;
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
-use wisp_core::Output;
+use wisp_core::{Output, Trail};
 use wisp_input::Input;
 use wisp_overlay::Overlay;
 
@@ -51,7 +51,10 @@ fn main() -> anyhow::Result<()> {
         }
     })?;
 
-    let overlay = Overlay::start().inspect_err(|e| log::warn!("no trail: {e:#}")).ok();
+    let overlay = backend.trail().or_else(|| {
+        let overlay = Overlay::start().inspect_err(|e| log::warn!("no trail: {e:#}")).ok()?;
+        Some(Box::new(overlay) as Box<dyn Trail>)
+    });
     if let Some(overlay) = &overlay {
         overlay.set_theme(config.theme.clone());
     }

@@ -36,6 +36,11 @@ pub trait Backend: Send {
     fn focus(&self, window: &Window) -> anyhow::Result<()>;
     /// Runs a compositor command, written the compositor's way.
     fn dispatch(&self, command: &str) -> anyhow::Result<()>;
+    /// A trail the compositor draws itself, for compositors without
+    /// layer-shell. `None` means wisp's own overlay.
+    fn trail(&self) -> Option<Box<dyn wisp_core::Trail>> {
+        None
+    }
 }
 
 /// Picks the backend for the running compositor: `$WISP_BACKEND` if set,
