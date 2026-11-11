@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import * as api from "./api";
+import ButtonInput from "./ButtonInput";
 import GestureList from "./GestureList";
 
 type Tab = "global" | "app" | "setup";
@@ -225,13 +226,11 @@ function SettingsForm({
   );
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-4">
-      <Labeled label="Trigger button">
-        <select className="field" value={settings.trigger} onChange={(e) => set({ trigger: e.target.value })}>
-          {["middle", "side", "extra", "forward", "back", "task"].map((b) => (
-            <option key={b}>{b}</option>
-          ))}
-        </select>
-      </Labeled>
+      <div className="col-span-2">
+        <Labeled label="Trigger button">
+          <ButtonInput value={settings.trigger} onChange={(trigger) => set({ trigger })} />
+        </Labeled>
+      </div>
       <Labeled label="Trail theme">
         <select className="field" value={settings.theme} onChange={(e) => set({ theme: e.target.value })}>
           {themes.map((t) => (

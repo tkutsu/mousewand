@@ -1,7 +1,7 @@
 # ~/.config/mousewand/config.toml
 # Every setting is optional; these are the defaults.
 
-trigger = "middle"     # middle, side, extra (mouse 5), forward, back or task
+trigger = "middle"     # middle, back (mouse 4), forward (mouse 5); the settings app can detect it
 threshold = 8          # motion before a press becomes a gesture (≈ px)
 hold_ms = 300          # holding still this long makes it a normal press
 min_segment = 30       # shorter strokes are ignored as noise
@@ -31,7 +31,7 @@ action = { command = "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-" }
 # Global gestures: the same in every app, and no app file can replace them.
 # With a `trigger` of their own, that button runs them and nothing else.
 [global]
-# trigger = "side"
+# trigger = "back"
 
 # `dispatch` is passed to Hyprland as is. Lua-config Hyprland (0.55+)
 # takes Lua dispatchers; older versions take e.g. "workspace e+1".
@@ -49,10 +49,8 @@ action = { dispatch = 'hl.dsp.focus({ workspace = "e-1" })' }
 # further up-right taps tab, and releasing the trigger lets go of alt.
 [[global.gesture]]
 stroke = "9"
-kind = "hold"
-hold = "alt"
 name = "Switch windows"
-action = { keys = "Tab" }
+action = { keys = "Tab", hold = "alt" }
 
 # Hints: the stroke so far as arrows, what it could still become, and the
 # name of what fired.

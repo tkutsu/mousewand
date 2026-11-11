@@ -14,7 +14,7 @@
 - **You see what you draw.** A smooth, glowing trail follows the stroke, and turns red when nothing matches. Turn on hints to see the stroke so far, what it could still become, and the name of what fired.
 - **More than strokes.** Spin the wheel or click the other buttons while holding the trigger. Strokes can repeat as you keep moving, for scrubbing through tabs, or hold keys down, for a real alt-tab. Global gestures can live on a button of their own.
 - **Sets itself up.** It installs what your desktop needs, like GNOME's extension, and tells you once about anything left for you to do.
-- **Plain text config, applied on save.** Or draw a W to open the settings app.
+- **Plain text config, applied on save.** Or draw an M to open the settings app, and just press the buttons and shortcuts you want.
 
 ## Install
 
@@ -36,7 +36,7 @@ sudo modprobe uinput; and sudo udevadm control --reload; and sudo udevadm trigge
 
 Log out and back in once. Being in the `input` group works too.
 
-**3. Try it.** Run `mousewand` in a terminal, hold the middle button and draw. Out of the box, a W (↘↗↘↗) opens the settings app; add your own gestures below. Ctrl+C gives the mouse back.
+**3. Try it.** Run `mousewand` in a terminal, hold the middle button and draw. Out of the box, an M (↑↘↗↓) opens the settings app; add your own gestures below. Ctrl+C gives the mouse back.
 
 **4. Start it with your desktop.**
 
@@ -110,7 +110,7 @@ An app's gestures replace the ones in `config.toml` with the same input. A broke
 ### Settings
 
 ```toml
-trigger = "middle"   # middle, side, extra (mouse 5), forward, back or task
+trigger = "middle"   # middle, back (mouse 4) or forward (mouse 5); the settings app can detect it
 threshold = 8        # movement, in px, before a press becomes a gesture
 hold_ms = 300        # holding still this long makes it a normal press
 min_segment = 30     # shorter strokes are ignored as noise
@@ -121,7 +121,7 @@ theme = "default"    # or a file in themes/, without .toml
 ### Actions
 
 - `keys`: a key combo like `"ctrl+shift+t"`, typed into the window you drew on. Keys are physical positions on a US layout, whatever your layout is.
-- `command`: a shell command. It gets `$MOUSEWAND_CLASS` and `$MOUSEWAND_TITLE`.
+- `command`: a shell command. It gets `$MOUSEWAND_CLASS` and `$MOUSEWAND_TITLE`, and can use the selected text; see [Recipes](#recipes).
 - `dispatch`: a compositor command, for the desktops in the table above. Hyprland with a Lua config takes `'hl.dsp.focus({ workspace = "e+1" })'`; older versions take `"workspace e+1"`.
 
 ### Inputs
@@ -130,12 +130,19 @@ Each gesture has one:
 
 - `stroke = "DR"`: a drawn stroke.
 - `wheel = "up"`: a wheel notch (`up`, `down`, `left`, `right`) while holding the trigger. Fires on every notch.
-- `rocker = "right"`: a `left` or `right` click while holding the trigger.
+- `click = "right"`: a `left` or `right` click while holding the trigger.
 
 A stroke can keep firing while you hold the trigger:
 
-- `kind = "repeat"` fires when the stroke is recognized, then again every `step` px (80 by default) you keep moving its way, and on every wheel notch. Good for scrubbing through tabs.
-- `kind = "hold"` with `hold = "alt"` does the same with those keys held down until you let go. `stroke = "9"`, `kind = "hold"`, `hold = "alt"`, `action = { keys = "Tab" }` is a real alt-tab.
+- `repeat = true` fires when the stroke is recognized, then again every `step` px (80 by default) you keep moving its way, and on every wheel notch. Good for scrubbing through tabs.
+- `hold` in the action does the same, with those keys held down until you let go. This is a real alt-tab:
+
+```toml
+[[gesture]]
+stroke = "9"
+name = "Switch windows"
+action = { keys = "Tab", hold = "alt" }
+```
 
 A repeating stroke fires as soon as it's recognized, so no other stroke may start with it; mousewand rejects such a config with an error.
 
@@ -147,7 +154,7 @@ Gestures under `[global]` are the same in every app, and no app file can replace
 
 ```toml
 [global]
-trigger = "side"     # optional; without it they share the main trigger
+trigger = "back"     # optional; without it they share the main trigger
 
 [[global.gesture]]
 stroke = "RU"
@@ -177,6 +184,24 @@ padding = 14
 radius = 14
 ```
 
+### Recipes
+
+Commands can use the text you selected: `wl-paste --primary` prints it on Wayland, `xclip -o` on X11.
+
+```toml
+[[gesture]]
+stroke = "UR"
+name = "Copy selection"
+action = { command = "wl-paste --primary | wl-copy" }
+
+[[gesture]]
+stroke = "UL"
+name = "Search selection"
+action = { command = 'xdg-open "https://duckduckgo.com/?q=$(wl-paste --primary --no-newline | jq -sRr @uri)"' }
+```
+
+Start the query with a bang, like `?q=!yt+`, to search a particular site.
+
 ### Themes
 
 ```toml
@@ -191,7 +216,7 @@ glow = 0.9            # 0 is a plain line
 
 ## Settings app
 
-Draw a W over any window to open the settings app on that app's gestures. It has presets for common apps, a Record button that captures a shortcut as you press it, and an Everywhere tab for the trigger, theme and global gestures. It edits the same files, keeps your comments, and won't save anything mousewand would reject.
+Draw an M over any window to open the settings app on that app's gestures. It has presets for common apps, a Record button that captures a shortcut as you press it, a Detect button that finds your trigger as you press it, and an Everywhere tab for the trigger, theme and global gestures. It edits the same files, keeps your comments, and won't save anything mousewand would reject.
 
 It's a Tauri app, so it needs WebKitGTK (`webkit2gtk-4.1`), Node and pnpm to build:
 
@@ -217,17 +242,19 @@ Most answers are in the log: `journalctl --user -u mousewand -f`, or run `mousew
 
 **No trail.** On GNOME, log out and back in once after the first start. On X11, mousewand needs picom or another compositing manager. Anywhere else, look for `no trail:` in the log; the trail needs a working GPU driver.
 
-**Gestures start when I meant to click or drag.** A quick click passes through as a click, and holding still for `hold_ms` makes it a normal press, for middle-drag and autoscroll. If a slight wobble starts a gesture anyway, raise `threshold`.
+**A dot of trail flashes now and then, or gestures start when I meant to click.** The trigger went down while the mouse was moving, often a thumb brushing a side button: past `threshold` px, that's a gesture, and one too short to be a stroke shows as a dot. A still click passes through as a click, and holding still for `hold_ms` makes it a normal press, for middle-drag and autoscroll. Raise `threshold` if it happens often.
 
 **My mouse settings stopped applying.** Your compositor now sees one virtual mouse, "mousewand virtual mouse". Apply per-device settings, like a custom acceleration profile, to it instead.
+
+**"unknown field `kind`", `hold` or `rocker`.** The gesture format changed: `kind = "repeat"` is now `repeat = true`, `hold` goes in the action (`action = { keys = "Tab", hold = "alt" }`), and `rocker` is now `click`.
 
 **Keys come out wrong.** `keys` uses US key positions. On another layout, write the key that sits in the same place on a US keyboard.
 
 **No hints.** Check `enabled = true` under `[hint]` in `config.toml`. If they show arrows but no text, the `font` isn't installed: `fc-match "Your Font"` shows what it resolves to.
 
-**"already a [global] gesture".** An app file uses the same stroke, wheel or rocker as a global gesture that shares the main trigger. Change one of them, or give `[global]` a `trigger` of its own.
+**"already a [global] gesture".** An app file uses the same stroke, wheel or click as a global gesture that shares the main trigger. Change one of them, or give `[global]` a `trigger` of its own.
 
-**Drawing a W shows "command not found".** The settings app isn't installed; see [Settings app](#settings-app).
+**Drawing an M shows "command not found".** The settings app isn't installed; see [Settings app](#settings-app).
 
 **The mouse is stuck.** Stopping mousewand always gives it back: `systemctl --user stop mousewand`, or `pkill mousewand` from a keyboard.
 

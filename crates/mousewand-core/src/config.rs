@@ -6,6 +6,7 @@
 //! window class. Parsing is pure: the caller reads the files and passes their
 //! text in.
 
+use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, de};
@@ -158,24 +159,49 @@ pub const BTN_LEFT: u16 = 0x110;
 pub const BTN_RIGHT: u16 = 0x111;
 const BTN_MIDDLE: u16 = 0x112;
 
+/// The buttons a trigger can be, by the names browsers and games use: mouse 4
+/// is the rear thumb button, mouse 5 the front one. Rarer codes are numbered on.
+const BUTTONS: [(&str, u16); 6] = [
+    ("middle", BTN_MIDDLE),
+    ("back", 0x113),    // BTN_SIDE
+    ("forward", 0x114), // BTN_EXTRA
+    ("mouse6", 0x115),  // BTN_FORWARD
+    ("mouse7", 0x116),  // BTN_BACK
+    ("mouse8", 0x117),  // BTN_TASK
+];
+
 impl FromStr for Trigger {
     type Err = String;
 
+    /// A name from [`BUTTONS`], "mouse 3" to "mouse 5", or evdev's "side"
+    /// and "extra", as tools like evtest show them.
     fn from_str(s: &str) -> Result<Self, String> {
-        Ok(Trigger(match s.to_ascii_lowercase().as_str() {
-            "middle" => BTN_MIDDLE,
-            "side" => 0x113,
-            "extra" => 0x114,
-            "forward" => 0x115,
-            "back" => 0x116,
-            "task" => 0x117,
-            "left" | "right" => return Err(format!("{s:?} can't be the trigger: it would stop normal clicks")),
-            _ => {
-                return Err(format!(
-                    "unknown trigger {s:?}: use middle, side, extra, forward, back or task"
-                ));
+        let name = s.to_ascii_lowercase().replace(' ', "");
+        let name = match name.as_str() {
+            "mouse3" => "middle",
+            "mouse4" | "side" => "back",
+            "mouse5" | "extra" => "forward",
+            other => other,
+        };
+        match BUTTONS.iter().find(|(n, _)| *n == name) {
+            Some(&(_, code)) => Ok(Trigger(code)),
+            None if name == "left" || name == "right" => {
+                Err(format!("{s:?} can't be the trigger: it would stop normal clicks"))
             }
-        }))
+            None => Err(format!(
+                "unknown button {s:?}: use middle, back (mouse 4), forward (mouse 5), mouse6, mouse7 \
+                 or mouse8, or let the settings app detect it"
+            )),
+        }
+    }
+}
+
+impl fmt::Display for Trigger {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match BUTTONS.iter().find(|(_, code)| *code == self.0) {
+            Some((name, _)) => f.write_str(name),
+            None => write!(f, "button {:#x}", self.0),
+        }
     }
 }
 
@@ -213,8 +239,8 @@ pub enum Input {
     Stroke(Stroke),
     /// One wheel notch.
     Wheel(Wheel),
-    /// A press of another button.
-    Rocker(u16),
+    /// A click of another button, left or right.
+    Click(u16),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -233,7 +259,8 @@ pub enum Kind {
     /// motion in the stroke's last direction and on every wheel notch.
     Repeat { step: f64 },
     /// Like `Repeat`, with `keys` held down from the match until release:
-    /// holding alt and tapping tab is a real alt-tab switcher.
+    /// holding alt and tapping tab is a real alt-tab switcher. Written as
+    /// `hold` in the action.
     Hold { keys: Combo, step: f64 },
 }
 
@@ -243,11 +270,9 @@ impl Kind {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     /// A key combo sent to the window the gesture started on.
-    #[serde(deserialize_with = "parsed")]
     Keys(Combo),
     /// A shell command.
     Command(String),
@@ -260,12 +285,21 @@ pub enum Action {
 struct RawGesture {
     stroke: Option<String>,
     wheel: Option<String>,
-    rocker: Option<String>,
-    kind: Option<String>,
+    click: Option<String>,
+    repeat: Option<bool>,
     step: Option<f64>,
-    hold: Option<String>,
-    action: Action,
+    action: RawAction,
     name: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawAction {
+    keys: Option<String>,
+    command: Option<String>,
+    dispatch: Option<String>,
+    /// Keys held down from the match until the trigger is let go.
+    hold: Option<String>,
 }
 
 const DEFAULT_STEP: f64 = 80.0;
@@ -274,7 +308,7 @@ impl TryFrom<RawGesture> for Gesture {
     type Error = String;
 
     fn try_from(raw: RawGesture) -> Result<Gesture, String> {
-        let input = match (raw.stroke, raw.wheel, raw.rocker) {
+        let input = match (raw.stroke, raw.wheel, raw.click) {
             (Some(stroke), None, None) => Input::Stroke(stroke.parse()?),
             (None, Some(wheel), None) => Input::Wheel(match wheel.to_ascii_lowercase().as_str() {
                 "up" => Wheel::Up,
@@ -283,38 +317,52 @@ impl TryFrom<RawGesture> for Gesture {
                 "right" => Wheel::Right,
                 _ => return Err(format!("unknown wheel {wheel:?}: use up, down, left or right")),
             }),
-            (None, None, Some(button)) => Input::Rocker(match button.to_ascii_lowercase().as_str() {
+            (None, None, Some(button)) => Input::Click(match button.to_ascii_lowercase().as_str() {
                 "left" => BTN_LEFT,
                 "right" => BTN_RIGHT,
-                _ => return Err(format!("unknown rocker {button:?}: use left or right")),
+                _ => return Err(format!("unknown click {button:?}: use left or right")),
             }),
-            _ => return Err("a gesture needs exactly one of stroke, wheel or rocker".into()),
+            _ => return Err("a gesture needs exactly one of stroke, wheel or click".into()),
         };
+        let RawAction {
+            keys,
+            command,
+            dispatch,
+            hold,
+        } = raw.action;
+        let action = match (keys, command, dispatch) {
+            (Some(keys), None, None) => Action::Keys(keys.parse()?),
+            (None, Some(command), None) => Action::Command(command),
+            (None, None, Some(dispatch)) => Action::Dispatch(dispatch),
+            _ => return Err("an action needs exactly one of keys, command or dispatch".into()),
+        };
+        if hold.is_some() && !matches!(action, Action::Keys(_)) {
+            return Err("`hold` only goes with keys".into());
+        }
         let step = raw.step.unwrap_or(DEFAULT_STEP);
         if step <= 0.0 {
             return Err(format!("step must be positive, not {step}"));
         }
-        let kind = match (raw.kind.as_deref(), raw.hold) {
-            (None | Some("oneshot"), None) => Kind::Oneshot,
-            (Some("repeat"), None) => Kind::Repeat { step },
-            (Some("hold"), Some(keys)) => Kind::Hold {
+        // Holding keys only makes sense from the match on, so it repeats.
+        let kind = match (hold, raw.repeat) {
+            (Some(keys), None | Some(true)) => Kind::Hold {
                 keys: keys.parse()?,
                 step,
             },
-            (Some("hold"), None) => return Err("a hold gesture needs `hold`, the keys to hold down".into()),
-            (_, Some(_)) => return Err("`hold` only goes with kind = \"hold\"".into()),
-            (Some(other), None) => return Err(format!("unknown kind {other:?}: use oneshot, repeat or hold")),
+            (Some(_), Some(false)) => return Err("a gesture that holds keys always repeats".into()),
+            (None, Some(true)) => Kind::Repeat { step },
+            (None, _) => Kind::Oneshot,
         };
         if kind.continuous() && !matches!(input, Input::Stroke(_)) {
-            return Err("repeat and hold gestures need a stroke".into());
+            return Err("only strokes can repeat or hold keys".into());
         }
         if !kind.continuous() && raw.step.is_some() {
-            return Err("`step` only goes with repeat and hold gestures".into());
+            return Err("`step` only goes with repeat = true or hold".into());
         }
         Ok(Gesture {
             input,
             kind,
-            action: raw.action,
+            action,
             name: raw.name.filter(|n| !n.trim().is_empty()),
         })
     }
@@ -536,8 +584,8 @@ impl Config {
 
     /// The gestures for the trigger over a window of `class`: the global
     /// ones unless they have their own trigger, its app's, the shared ones
-    /// the app doesn't override, then the settings gesture unless something
-    /// else uses its stroke.
+    /// the app doesn't override, then the settings gestures whose strokes
+    /// nothing else uses.
     pub fn gestures_for(&self, class: &str) -> Vec<Gesture> {
         let app = self
             .apps
@@ -548,9 +596,10 @@ impl Config {
             None => self.global.clone(),
         };
         gestures.extend(merged(app.map_or(&[], |a| &a.gestures), &self.gestures));
-        let settings = settings_gesture();
-        if !gestures.iter().any(|g| g.input == settings.input) {
-            gestures.push(settings);
+        for settings in SETTINGS_STROKES.map(settings_gesture) {
+            if !gestures.iter().any(|g| g.input == settings.input) {
+                gestures.push(settings);
+            }
         }
         gestures
     }
@@ -561,14 +610,14 @@ impl Config {
     }
 }
 
-/// The stroke that opens the settings app on the window under the cursor:
-/// a W, ↘↗↘↗.
-pub const SETTINGS_STROKE: &str = "3939";
+/// The strokes that open the settings app on the window under the cursor:
+/// an M, drawn with straight sides (↑↘↗↓) or all in diagonals (↗↘↗↘).
+pub const SETTINGS_STROKES: [&str; 2] = ["U39D", "9393"];
 
 /// Opens `mousewand-settings`, which reads the window class from `MOUSEWAND_CLASS`.
-fn settings_gesture() -> Gesture {
+fn settings_gesture(stroke: &str) -> Gesture {
     Gesture {
-        input: Input::Stroke(SETTINGS_STROKE.parse().expect("a valid stroke")),
+        input: Input::Stroke(stroke.parse().expect("a valid stroke")),
         kind: Kind::Oneshot,
         action: Action::Command("mousewand-settings".into()),
         name: Some("mousewand settings".into()),
@@ -599,8 +648,8 @@ fn describe(input: &Input) -> String {
     match input {
         Input::Stroke(stroke) => format!("stroke {stroke}"),
         Input::Wheel(wheel) => format!("wheel {wheel:?}").to_lowercase(),
-        Input::Rocker(BTN_LEFT) => "rocker left".into(),
-        Input::Rocker(_) => "rocker right".into(),
+        Input::Click(BTN_LEFT) => "click left".into(),
+        Input::Click(_) => "click right".into(),
     }
 }
 
@@ -668,12 +717,12 @@ mod tests {
 
         [[gesture]]
         stroke = "U"
-        kind = "repeat"
+        repeat = true
         step = 60
         action = { keys = "ctrl+Tab" }
 
         [[gesture]]
-        rocker = "left"
+        click = "left"
         action = { keys = "ctrl+w" }
     "#;
 
@@ -726,7 +775,7 @@ mod tests {
             Some(Action::Keys("ctrl+shift+Tab".parse().unwrap()))
         );
         assert_eq!(
-            action_for(&c, "firefox", Input::Rocker(BTN_LEFT)),
+            action_for(&c, "firefox", Input::Click(BTN_LEFT)),
             Some(Action::Keys("ctrl+w".parse().unwrap()))
         );
     }
@@ -740,9 +789,7 @@ mod tests {
         let hold = r#"
             [[gesture]]
             stroke = "R"
-            kind = "hold"
-            hold = "alt"
-            action = { keys = "Tab" }
+            action = { keys = "Tab", hold = "alt" }
         "#;
         let c = Config::parse(hold, &[]).unwrap();
         assert_eq!(
@@ -759,10 +806,11 @@ mod tests {
         let opens_settings = |c: &Config, class: &str| {
             c.gestures_for(class)
                 .iter()
-                .any(|g| g.input == stroke("3939") && g.action == Action::Command("mousewand-settings".into()))
+                .any(|g| g.input == stroke("9393") && g.action == Action::Command("mousewand-settings".into()))
         };
         assert!(opens_settings(&config(), "kitty"));
-        let taken = "[[gesture]]\nstroke = \"3939\"\naction = { keys = \"a\" }";
+        assert!(config().gestures_for("kitty").iter().any(|g| g.input == stroke("U39D")));
+        let taken = "[[gesture]]\nstroke = \"9393\"\naction = { keys = \"a\" }";
         let c = Config::parse("", &[("kitty".into(), taken.into())]).unwrap();
         assert!(!opens_settings(&c, "kitty"));
         assert!(opens_settings(&c, "firefox"));
@@ -794,12 +842,42 @@ mod tests {
         let bad = |g: &str| Config::parse(&format!("[[gesture]]\n{g}\naction = {{ keys = \"a\" }}"), &[]).unwrap_err();
         assert!(bad("").contains("exactly one"));
         assert!(bad("stroke = \"L\"\nwheel = \"up\"").contains("exactly one"));
-        assert!(bad("wheel = \"up\"\nkind = \"repeat\"").contains("need a stroke"));
-        assert!(bad("stroke = \"L\"\nkind = \"hold\"").contains("needs `hold`"));
-        assert!(bad("stroke = \"L\"\nhold = \"alt\"").contains("only goes with"));
+        assert!(bad("wheel = \"up\"\nrepeat = true").contains("only strokes"));
         assert!(bad("stroke = \"L\"\nstep = 5").contains("only goes with"));
-        assert!(bad("stroke = \"L\"\nkind = \"spin\"").contains("unknown kind"));
-        assert!(bad("rocker = \"middle\"").contains("unknown rocker"));
+        assert!(bad("click = \"middle\"").contains("unknown click"));
+        // The old names are gone.
+        assert!(bad("stroke = \"L\"\nkind = \"repeat\"").contains("unknown field"));
+        assert!(bad("rocker = \"left\"").contains("unknown field"));
+
+        let action = |a: &str| Config::parse(&format!("[[gesture]]\nstroke = \"L\"\naction = {a}"), &[]);
+        assert!(
+            action("{ keys = \"a\", command = \"b\" }")
+                .unwrap_err()
+                .contains("exactly one")
+        );
+        assert!(
+            action("{ command = \"b\", hold = \"alt\" }")
+                .unwrap_err()
+                .contains("only goes with keys")
+        );
+        assert!(action("{ keys = \"a\", hold = \"alt\" }").is_ok());
+        let no_repeat = "[[gesture]]\nstroke = \"L\"\nrepeat = false\naction = { keys = \"a\", hold = \"alt\" }";
+        assert!(Config::parse(no_repeat, &[]).unwrap_err().contains("always repeats"));
+    }
+
+    #[test]
+    fn button_names() {
+        let code = |s: &str| s.parse::<Trigger>().map(|t| t.0);
+        assert_eq!(code("back"), Ok(0x113));
+        assert_eq!(code("Mouse 4"), Ok(0x113));
+        assert_eq!(code("side"), Ok(0x113));
+        assert_eq!(code("forward"), Ok(0x114));
+        assert_eq!(code("extra"), Ok(0x114));
+        assert_eq!(code("mouse3"), Ok(0x112));
+        assert_eq!(Trigger(0x113).to_string(), "back");
+        assert_eq!(Trigger(0x117).to_string(), "mouse8");
+        assert!(code("right").unwrap_err().contains("normal clicks"));
+        assert!(code("thumb").unwrap_err().contains("detect"));
     }
 
     #[test]
@@ -917,7 +995,7 @@ mod tests {
         let main = r#"
             [[gesture]]
             stroke = "L"
-            kind = "repeat"
+            repeat = true
             action = { keys = "a" }
         "#;
         assert!(Config::parse(main, &[]).is_ok());
@@ -925,7 +1003,7 @@ mod tests {
         let bad = Config::parse(main, &[("x".into(), longer.into())]).unwrap_err();
         assert!(bad.contains("apps/x.toml") && bad.contains("LD"), "{bad}");
         // A oneshot may prefix: it fires on release, after the whole stroke.
-        let oneshot = main.replace("kind = \"repeat\"\n", "");
+        let oneshot = main.replace("repeat = true\n", "");
         assert!(Config::parse(&oneshot, &[("x".into(), longer.into())]).is_ok());
     }
 }

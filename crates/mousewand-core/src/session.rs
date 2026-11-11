@@ -3,7 +3,7 @@
 //! Oneshot strokes fire on release. Repeat and hold strokes fire as soon as
 //! they match and then lock: recognition stops, and every `step` of motion
 //! in the stroke's last direction, and every wheel notch, fires again.
-//! Wheel and rocker gestures fire on each notch or press.
+//! Wheel and click gestures fire on each notch or click.
 
 use crate::config::{Action, Gesture, Input, Kind, Wheel};
 use crate::keys::Combo;
@@ -108,11 +108,11 @@ impl Session {
         self.fire_once(&Input::Wheel(wheel))
     }
 
-    pub fn rocker(&mut self, button: u16) -> Vec<Fire> {
+    pub fn click(&mut self, button: u16) -> Vec<Fire> {
         if self.locked.is_some() {
             return Vec::new();
         }
-        self.fire_once(&Input::Rocker(button))
+        self.fire_once(&Input::Click(button))
     }
 
     /// The trigger was released with this final stroke.
@@ -120,7 +120,7 @@ impl Session {
         if self.locked.is_some() {
             return self.cancel();
         }
-        // After a wheel or rocker gesture, the motion was incidental.
+        // After a wheel or click gesture, the motion was incidental.
         if self.fired || stroke.is_empty() {
             return Vec::new();
         }
@@ -179,23 +179,21 @@ mod tests {
 
         [[gesture]]
         stroke = "U"
-        kind = "repeat"
+        repeat = true
         step = 50
         action = { keys = "ctrl+Tab" }
 
         [[gesture]]
         stroke = "R"
-        kind = "hold"
-        hold = "alt"
         step = 50
-        action = { keys = "Tab" }
+        action = { keys = "Tab", hold = "alt" }
 
         [[gesture]]
         wheel = "down"
         action = { command = "scrolled" }
 
         [[gesture]]
-        rocker = "right"
+        click = "right"
         action = { command = "rocked" }
     "#;
 
@@ -263,12 +261,12 @@ mod tests {
     }
 
     #[test]
-    fn wheel_and_rocker_fire_each_time_and_skip_the_stroke() {
+    fn wheel_and_click_fire_each_time_and_skip_the_stroke() {
         let mut session = session();
         assert_eq!(session.wheel(Wheel::Down), [command("scrolled")]);
         assert_eq!(session.wheel(Wheel::Down), [command("scrolled")]);
         assert_eq!(session.wheel(Wheel::Up), []);
-        assert_eq!(session.rocker(crate::config::BTN_RIGHT), [command("rocked")]);
+        assert_eq!(session.click(crate::config::BTN_RIGHT), [command("rocked")]);
         assert_eq!(session.stroke(&s("U")), [], "no repeat after a wheel gesture");
         assert_eq!(session.end(&s("L")), []);
     }

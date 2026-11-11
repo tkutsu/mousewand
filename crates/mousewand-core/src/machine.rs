@@ -29,8 +29,8 @@ pub enum Output {
     Motion(f64, f64),
     /// A wheel notch during a gesture.
     Wheel(Wheel),
-    /// Another button pressed during a gesture.
-    Rocker(u16),
+    /// Another button clicked during a gesture.
+    Click(u16),
 }
 
 /// Input that can belong to a gesture instead of the app.
@@ -156,7 +156,7 @@ impl Machine {
         };
         out.push(match extra {
             Extra::Wheel(wheel) => Output::Wheel(wheel),
-            Extra::Button(code) => Output::Rocker(code),
+            Extra::Button(code) => Output::Click(code),
         });
         Some(out)
     }
@@ -268,7 +268,7 @@ mod tests {
             Some(vec![Begin, Wheel(crate::Wheel::Up)]),
             "a pending press becomes a gesture"
         );
-        assert_eq!(m.claim(Extra::Button(0x110)), Some(vec![Rocker(0x110)]));
+        assert_eq!(m.claim(Extra::Button(0x110)), Some(vec![Click(0x110)]));
         assert_eq!(m.release(), [End(Stroke::default())], "no click replay");
 
         m.press(ms(0));
