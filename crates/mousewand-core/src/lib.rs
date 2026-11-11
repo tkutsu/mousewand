@@ -11,7 +11,8 @@ pub mod stroke;
 pub mod trail;
 
 pub use config::{
-    Action, Align, Color, Config, Gesture, HintStyle, Input, Kind, Position, Rgba, Settings, Theme, Trigger, Wheel,
+    Action, Align, Color, Config, Gesture, Gradient, HintStyle, Input, Kind, Position, Rgba, Settings, Theme, Trigger,
+    Wheel,
 };
 pub use hint::Hint;
 pub use machine::{Extra, Machine, Output};

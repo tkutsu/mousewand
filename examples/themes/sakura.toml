@@ -1,0 +1,7 @@
+# Blossom pink, fading from pale to deep.
+color = ["#ffd6e2", "#ff9ec0", "#f06292"]
+rejected = "#8f8aa3"
+width = 28
+life_ms = 550
+fade_ms = 350
+glow = 0.7

@@ -64,12 +64,12 @@ impl Scene {
         if fade <= 0.0 {
             return None;
         }
-        let color = match self.ended {
-            Some((_, false)) => theme.rejected,
-            _ => theme.color,
+        let colors: Vec<_> = match self.ended {
+            Some((_, false)) => vec![output(theme.rejected.0)],
+            _ => theme.color.0.iter().map(|c| output(c.0)).collect(),
         };
         let style = Style {
-            color: output(color.0),
+            colors: &colors,
             glow: theme.glow,
             fade,
             width: theme.width,
