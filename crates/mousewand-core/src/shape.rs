@@ -43,15 +43,41 @@ impl PartialEq for Shape {
 impl Eq for Shape {}
 
 /// The shapes that need no examples. A file in `shapes/` replaces them.
-pub const BUILT_IN: [&str; 1] = ["circle"];
+pub const BUILT_IN: [&str; 8] = [
+    "circle", "triangle", "square", "star", "heart", "check", "spiral", "infinity",
+];
 
 impl Shape {
     pub fn built_in(name: &str) -> Option<Shape> {
-        let points = match name {
-            "circle" => (0..64)
-                .map(|i| i as f64 / 64.0 * TAU)
-                .map(|a| (a.cos(), a.sin()))
+        // Screen coordinates: y grows downwards.
+        let curve = |n: usize, f: &dyn Fn(f64) -> Point| (0..=n).map(|i| f(i as f64 / n as f64)).collect();
+        let points: Vec<Point> = match name {
+            "circle" => curve(64, &|t| ((t * TAU).cos(), (t * TAU).sin())),
+            "triangle" => vec![(0.0, -1.0), (0.87, 0.5), (-0.87, 0.5), (0.0, -1.0)],
+            "square" => vec![(-1.0, -1.0), (-1.0, 1.0), (1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)],
+            // In one line, the way it's drawn by hand: each point to the
+            // one after next.
+            "star" => (0..=5)
+                .map(|i| (i * 2 % 5) as f64 / 5.0 * TAU)
+                .map(|a| (a.sin(), -a.cos()))
                 .collect(),
+            "heart" => curve(64, &|t| {
+                let t = t * TAU;
+                let x = 16.0 * t.sin().powi(3);
+                let y = 13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos();
+                (x / 16.0, -y / 16.0)
+            }),
+            "check" => vec![(-1.0, 0.0), (-0.4, 0.6), (1.0, -1.0)],
+            // A turn and a half, from the middle out.
+            "spiral" => curve(64, &|t| {
+                let a = t * 1.75 * TAU;
+                (t * a.cos(), t * a.sin())
+            }),
+            // A figure of eight on its side.
+            "infinity" => curve(64, &|t| {
+                let a = t * TAU;
+                (a.sin(), (2.0 * a).sin() / 2.0)
+            }),
             _ => return None,
         };
         Shape::new(name, &[points]).ok()
@@ -326,6 +352,71 @@ mod tests {
             ),
         ] {
             assert!(!is_circle(&path), "{what}: {:.3}", circle_distance(&path));
+        }
+    }
+
+    /// Each built-in shape drawn by hand: bigger, squashed, from another
+    /// corner or the other way round, a little wobbly.
+    #[test]
+    fn built_in_shapes_tell_each_other_apart() {
+        let all: Vec<Shape> = BUILT_IN.iter().filter_map(|n| Shape::built_in(n)).collect();
+        assert_eq!(all.len(), BUILT_IN.len());
+        let wobble = |path: Vec<Point>| -> Vec<Point> {
+            path.iter()
+                .enumerate()
+                .map(|(i, &(x, y))| (x + 3.0 * (i as f64 * 1.7).sin(), y + 3.0 * (i as f64 * 2.3).cos()))
+                .collect()
+        };
+        let scaled = |path: &[Point], sx: f64, sy: f64| -> Vec<Point> {
+            path.iter().map(|&(x, y)| (300.0 + sx * x, 200.0 + sy * y)).collect()
+        };
+        let drawn: [(&str, Vec<Point>); 10] = [
+            ("circle", ellipse(100.0, 80.0, 0.3, 1.0, -TAU, 0.04)),
+            ("circle", ellipse(90.0, 90.0, 0.0, 0.0, TAU * 0.92, 0.0)),
+            (
+                "triangle",
+                polyline(&[(100.0, 200.0), (300.0, 200.0), (200.0, 30.0), (95.0, 195.0)]),
+            ),
+            (
+                "square",
+                polyline(&[(0.0, 0.0), (160.0, 0.0), (160.0, 150.0), (0.0, 150.0), (0.0, 4.0)]),
+            ),
+            (
+                "star",
+                polyline(&[(-58.0, 81.0), (0.0, -100.0), (58.0, 81.0), (-95.0, -31.0), (95.0, -31.0), (-58.0, 81.0)]),
+            ),
+            ("heart", scaled(Shape::built_in("heart").unwrap().outline(), 90.0, 80.0)),
+            ("check", polyline(&[(0.0, 60.0), (50.0, 120.0), (170.0, -30.0)])),
+            ("spiral", {
+                let mut out: Vec<Point> = (0..=80)
+                    .map(|i| i as f64 / 80.0)
+                    .map(|t| (t, t * 1.6 * TAU))
+                    .map(|(t, a)| (120.0 * t * a.cos(), -120.0 * t * a.sin()))
+                    .collect();
+                out.reverse();
+                out
+            }),
+            (
+                "infinity",
+                (0..=80)
+                    .map(|i| i as f64 / 80.0 * TAU)
+                    .map(|a| (150.0 * a.sin(), -50.0 * (2.0 * a).sin()))
+                    .collect(),
+            ),
+            (
+                "check",
+                polyline(&[(0.0, 0.0), (30.0, 40.0), (110.0, -70.0)]),
+            ),
+        ];
+        for (name, path) in drawn {
+            let path = wobble(path);
+            let cloud = Cloud::of(&path).unwrap();
+            let scores: Vec<String> = all
+                .iter()
+                .map(|s| format!("{} {:.3}", s.name, s.distance(&cloud)))
+                .collect();
+            let found = recognize(&all, &path).map(|s| s.name.as_str());
+            assert_eq!(found, Some(name), "{}", scores.join(", "));
         }
     }
 

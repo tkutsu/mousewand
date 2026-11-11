@@ -23,7 +23,8 @@ pub enum State {
     Drawing,
     /// Something fired; `label` says what.
     Fired,
-    /// The gesture ended without firing anything.
+    /// The gesture ended without firing anything. `label` says why, if not
+    /// for want of a gesture.
     Missed,
 }
 
@@ -70,6 +71,14 @@ impl Hint {
             label: None,
             state: State::Missed,
             next: Vec::new(),
+        }
+    }
+
+    /// Given up on by holding still.
+    pub fn cancelled(stroke: &Stroke) -> Hint {
+        Hint {
+            label: Some("Cancelled".into()),
+            ..Hint::missed(stroke)
         }
     }
 }

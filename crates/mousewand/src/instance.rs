@@ -15,10 +15,30 @@ pub struct Instance {
 
 /// The lock, or `None` (and a log line) when another mousewand holds it.
 pub fn claim() -> anyhow::Result<Option<Instance>> {
-    // Per user and session; a shared fallback like /tmp would let one user's
-    // mousewand block another's.
+    claim_at(&lock_path()?)
+}
+
+/// The running mousewand's pid, if one is running.
+pub fn running() -> anyhow::Result<Option<u32>> {
+    let path = lock_path()?;
+    let mut file = match File::open(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        other => other.with_context(|| format!("opening {}", path.display()))?,
+    };
+    // Whoever holds the lock is running; if it's free, nobody is.
+    if file.try_lock_shared().is_ok() {
+        return Ok(None);
+    }
+    let mut pid = String::new();
+    file.read_to_string(&mut pid)?;
+    Ok(pid.trim().parse().ok())
+}
+
+/// Per user and session; a shared fallback like /tmp would let one user's
+/// mousewand block another's.
+fn lock_path() -> anyhow::Result<std::path::PathBuf> {
     let dir = std::env::var_os("XDG_RUNTIME_DIR").context("XDG_RUNTIME_DIR is not set")?;
-    claim_at(&Path::new(&dir).join("mousewand.lock"))
+    Ok(Path::new(&dir).join("mousewand.lock"))
 }
 
 fn claim_at(path: &Path) -> anyhow::Result<Option<Instance>> {

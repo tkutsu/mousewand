@@ -101,6 +101,74 @@ pub fn code(name: &str) -> Option<u16> {
     })
 }
 
+/// Modifier keys held on the keyboard while drawing, written like
+/// `"ctrl+shift"`. Left and right count the same.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+pub struct Mods(u8);
+
+/// Each modifier's name, its bit, and its left and right key codes.
+const MODS: [(&str, u8, [u16; 2]); 4] = [
+    ("ctrl", 1, [29, 97]),
+    ("shift", 2, [42, 54]),
+    ("alt", 4, [56, 100]),
+    ("super", 8, [125, 126]),
+];
+
+impl Mods {
+    pub const NONE: Mods = Mods(0);
+
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    /// The modifiers among these held key codes.
+    pub fn of_keys(held: impl IntoIterator<Item = u16>) -> Mods {
+        let mut mods = 0;
+        for code in held {
+            if let Some((_, bit, _)) = MODS.iter().find(|(_, _, codes)| codes.contains(&code)) {
+                mods |= bit;
+            }
+        }
+        Mods(mods)
+    }
+
+    /// Every key code that counts as one of the modifiers.
+    pub fn codes() -> impl Iterator<Item = u16> {
+        MODS.iter().flat_map(|(_, _, codes)| *codes)
+    }
+}
+
+impl FromStr for Mods {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, String> {
+        let mut mods = 0;
+        for name in s.split('+').map(|n| n.trim().to_ascii_lowercase()) {
+            let name = match name.as_str() {
+                "control" => "ctrl",
+                "meta" | "win" | "logo" => "super",
+                other => other,
+            };
+            match MODS.iter().find(|(n, _, _)| *n == name) {
+                Some((_, bit, _)) => mods |= bit,
+                None => return Err(format!("{name:?} isn't a modifier: use ctrl, shift, alt or super")),
+            }
+        }
+        Ok(Mods(mods))
+    }
+}
+
+impl fmt::Display for Mods {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let names: Vec<&str> = MODS
+            .iter()
+            .filter(|(_, bit, _)| self.0 & bit != 0)
+            .map(|(name, _, _)| *name)
+            .collect();
+        f.write_str(&names.join("+"))
+    }
+}
+
 fn single_char(name: &str) -> Option<u16> {
     let mut chars = name.chars();
     let c = chars.next()?;
@@ -148,6 +216,15 @@ mod tests {
         assert_eq!("F12".parse::<Combo>().unwrap().codes, [88]);
         assert_eq!("ctrl+/".parse::<Combo>().unwrap().codes, [29, 53]);
         assert!("ctrl+nope".parse::<Combo>().is_err());
+    }
+
+    #[test]
+    fn modifiers() {
+        let mods: Mods = "Shift+ctrl".parse().unwrap();
+        assert_eq!(mods.to_string(), "ctrl+shift");
+        assert_eq!(Mods::of_keys([54, 97, 30]), mods, "right keys count, other keys don't");
+        assert!(Mods::of_keys([30]).is_empty());
+        assert!("ctrl+t".parse::<Mods>().unwrap_err().contains("isn't a modifier"));
     }
 
     #[test]

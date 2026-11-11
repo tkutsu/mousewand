@@ -7,7 +7,7 @@
 //! Wheel and click gestures fire on each notch or click.
 
 use crate::config::{Action, Gesture, Input, Kind, Wheel};
-use crate::keys::Combo;
+use crate::keys::{Combo, Mods};
 use crate::shape::{self, Point};
 use crate::stroke::{Dir, Stroke};
 
@@ -26,6 +26,11 @@ pub struct Session {
     locked: Option<Locked>,
     /// Whether anything has fired yet.
     fired: bool,
+    /// The modifier keys held on the keyboard: only gestures `with` exactly
+    /// these can fire.
+    mods: Mods,
+    /// Given up on: nothing fires any more.
+    abandoned: bool,
 }
 
 #[derive(Debug)]
@@ -44,7 +49,37 @@ impl Session {
             gestures,
             locked: None,
             fired: false,
+            mods: Mods::NONE,
+            abandoned: false,
         }
+    }
+
+    /// Sets the modifier keys held now.
+    pub fn set_mods(&mut self, mods: Mods) {
+        self.mods = mods;
+    }
+
+    pub fn mods(&self) -> Mods {
+        self.mods
+    }
+
+    /// The gestures that could fire with the modifiers held now.
+    pub fn candidates(&self) -> impl Iterator<Item = &Gesture> {
+        self.gestures.iter().filter(|g| g.with == self.mods)
+    }
+
+    /// Gives up on the gesture, unless something has fired: nothing fires
+    /// from now on. Returns whether it gave up.
+    pub fn abandon(&mut self) -> bool {
+        if self.fired || self.locked.is_some() {
+            return false;
+        }
+        self.abandoned = true;
+        true
+    }
+
+    pub fn abandoned(&self) -> bool {
+        self.abandoned
     }
 
     /// Whether the gesture matched anything, for feedback.
@@ -59,7 +94,7 @@ impl Session {
 
     /// The live stroke changed.
     pub fn stroke(&mut self, stroke: &Stroke) -> Vec<Fire> {
-        if self.locked.is_some() || self.fired {
+        if self.locked.is_some() || self.fired || self.abandoned {
             return Vec::new();
         }
         let Some(gesture) = self
@@ -107,11 +142,14 @@ impl Session {
         if let Some(locked) = &self.locked {
             return vec![Fire::Run(locked.action.clone())];
         }
+        if self.abandoned {
+            return Vec::new();
+        }
         self.fire_once(&Input::Wheel(wheel))
     }
 
     pub fn click(&mut self, button: u16) -> Vec<Fire> {
-        if self.locked.is_some() {
+        if self.locked.is_some() || self.abandoned {
             return Vec::new();
         }
         self.fire_once(&Input::Click(button))
@@ -124,14 +162,14 @@ impl Session {
             return self.cancel();
         }
         // After a wheel or click gesture, the motion was incidental.
-        if self.fired || stroke.is_empty() {
+        if self.fired || self.abandoned || stroke.is_empty() {
             return Vec::new();
         }
         let input = Input::Stroke(stroke.clone());
         if self.find(&input).is_some() {
             return self.fire_once(&input);
         }
-        let shapes = self.gestures.iter().filter_map(|g| match &g.input {
+        let shapes = self.candidates().filter_map(|g| match &g.input {
             Input::Shape(shape) => Some(shape),
             _ => None,
         });
@@ -152,7 +190,7 @@ impl Session {
     }
 
     fn find(&self, input: &Input) -> Option<&Gesture> {
-        self.gestures.iter().find(|g| &g.input == input)
+        self.candidates().find(|g| &g.input == input)
     }
 
     fn fire_once(&mut self, input: &Input) -> Vec<Fire> {
@@ -290,7 +328,43 @@ mod tests {
     }
 
     #[test]
+    fn modifiers_pick_the_gesture() {
+        let gestures = r#"
+            [[gesture]]
+            stroke = "L"
+            action = { keys = "alt+Left" }
+
+            [[gesture]]
+            stroke = "L"
+            with = "shift"
+            action = { keys = "ctrl+shift+Tab" }
+        "#;
+        let gestures = Config::parse(gestures, &[], &[]).unwrap().gestures;
+        let mut session = Session::new(gestures.clone());
+        session.set_mods("shift".parse().unwrap());
+        assert_eq!(session.end(&s("L"), &[]), [keys("ctrl+shift+Tab")]);
+        let mut session = Session::new(gestures.clone());
+        assert_eq!(session.end(&s("L"), &[]), [keys("alt+Left")]);
+        let mut session = Session::new(gestures);
+        session.set_mods("ctrl".parse().unwrap());
+        assert_eq!(session.end(&s("L"), &[]), [], "ctrl+L is no gesture");
+    }
+
+    #[test]
+    fn abandoned_fires_nothing_but_only_before_a_fire() {
+        let mut session = session();
+        assert!(session.abandon());
+        assert_eq!(session.end(&s("L"), &[]), []);
+        assert_eq!(session.wheel(Wheel::Down), []);
+        let mut session = self::session();
+        session.stroke(&s("U"));
+        assert!(!session.abandon(), "a repeat has taken over");
+        assert_eq!(session.wheel(Wheel::Up), [keys("ctrl+Tab")]);
+    }
+
+    #[test]
     fn wheel_and_click_fire_each_time_and_skip_the_stroke() {
+
         let mut session = session();
         assert_eq!(session.wheel(Wheel::Down), [command("scrolled")]);
         assert_eq!(session.wheel(Wheel::Down), [command("scrolled")]);

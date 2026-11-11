@@ -14,6 +14,10 @@ use crate::stroke::{Recognizer, Stroke};
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Output {
+    /// The trigger went down. What it becomes isn't known yet, but the
+    /// window under the cursor can be looked up, and its app can pass the
+    /// press through: see [`Machine::pass`].
+    Down,
     /// Send a real trigger press: a replayed click, or a hold without movement.
     Press,
     /// Send a real trigger release.
@@ -29,6 +33,9 @@ pub enum Output {
     Cancel,
     /// Pointer motion during a gesture, for repeat steps.
     Motion(f64, f64),
+    /// The pointer has held still mid-gesture for `cancel_ms`: sent once
+    /// per gesture, which may cancel it.
+    Still,
     /// A wheel notch during a gesture.
     Wheel(Wheel),
     /// Another button clicked during a gesture.
@@ -59,13 +66,29 @@ enum State {
         shown: Stroke,
         /// Whether a wheel notch or another button went to the gesture.
         claimed: bool,
+        still: Still,
     },
 }
+
+/// How long the pointer has been still during a gesture.
+#[derive(Debug)]
+struct Still {
+    since: Duration,
+    /// Motion since `since`: a sensor's jitter doesn't count as moving.
+    drift: (f64, f64),
+    /// Whether `Output::Still` went out.
+    sent: bool,
+}
+
+/// Motion under this, in device units, still counts as holding still.
+const JITTER: f64 = 4.0;
 
 #[derive(Debug)]
 pub struct Machine {
     threshold: f64,
     hold: Duration,
+    /// How long holding still mid-gesture takes to send `Still`, if ever.
+    cancel: Option<Duration>,
     min_segment: f64,
     state: State,
 }
@@ -75,15 +98,18 @@ impl Machine {
         Machine {
             threshold: settings.threshold,
             hold: Duration::from_millis(settings.hold_ms),
+            cancel: (settings.cancel_ms > 0).then(|| Duration::from_millis(settings.cancel_ms)),
             min_segment: settings.min_segment,
             state: State::Idle,
         }
     }
 
-    /// When `tick` must be called next, if a press is pending.
+    /// When `tick` must be called next, if a press is pending or a gesture
+    /// could be held still.
     pub fn deadline(&self) -> Option<Duration> {
-        match self.state {
-            State::Pending { since, .. } => Some(since + self.hold),
+        match &self.state {
+            State::Pending { since, .. } => Some(*since + self.hold),
+            State::Gesturing { still, .. } if !still.sent => self.cancel.map(|c| still.since + c),
             _ => None,
         }
     }
@@ -96,8 +122,21 @@ impl Machine {
                 moved: (0.0, 0.0),
                 rec,
             };
+            return vec![Output::Down];
         }
         Vec::new()
+    }
+
+    /// Gives this press to the app: it becomes an ordinary held button,
+    /// pressed late, until release. For apps with gestures turned off.
+    pub fn pass(&mut self) -> Vec<Output> {
+        match self.state {
+            State::Pending { .. } | State::Gesturing { .. } => {
+                self.state = State::Holding;
+                vec![Output::Press]
+            }
+            State::Idle | State::Holding => Vec::new(),
+        }
     }
 
     pub fn release(&mut self) -> Vec<Output> {
@@ -126,7 +165,7 @@ impl Machine {
         }
     }
 
-    pub fn motion(&mut self, dx: f64, dy: f64) -> Vec<Output> {
+    pub fn motion(&mut self, dx: f64, dy: f64, now: Duration) -> Vec<Output> {
         match &mut self.state {
             State::Pending { moved, rec, .. } => {
                 rec.push(dx, dy);
@@ -135,9 +174,15 @@ impl Machine {
                 if moved.0.hypot(moved.1) <= self.threshold {
                     return Vec::new();
                 }
-                self.begin()
+                self.begin(now)
             }
-            State::Gesturing { rec, shown, .. } => {
+            State::Gesturing { rec, shown, still, .. } => {
+                still.drift.0 += dx;
+                still.drift.1 += dy;
+                if still.drift.0.hypot(still.drift.1) > JITTER {
+                    still.since = now;
+                    still.drift = (0.0, 0.0);
+                }
                 rec.push(dx, dy);
                 let mut out = vec![Output::Motion(dx, dy)];
                 let stroke = rec.stroke();
@@ -159,9 +204,9 @@ impl Machine {
     /// Claims a wheel notch or button press for the gesture. `None` means
     /// it isn't mousewand's: forward it. A claimed press also turns a pending
     /// press into a gesture, so the trigger click is never replayed.
-    pub fn claim(&mut self, extra: Extra) -> Option<Vec<Output>> {
+    pub fn claim(&mut self, extra: Extra, now: Duration) -> Option<Vec<Output>> {
         let mut out = match self.state {
-            State::Pending { .. } => self.begin(),
+            State::Pending { .. } => self.begin(now),
             State::Gesturing { .. } => Vec::new(),
             State::Idle | State::Holding => return None,
         };
@@ -176,7 +221,7 @@ impl Machine {
     }
 
     /// Pending → Gesturing.
-    fn begin(&mut self) -> Vec<Output> {
+    fn begin(&mut self, now: Duration) -> Vec<Output> {
         let State::Pending { rec, .. } = std::mem::replace(&mut self.state, State::Idle) else {
             unreachable!("begin only runs on a pending press");
         };
@@ -189,17 +234,29 @@ impl Machine {
             rec,
             shown,
             claimed: false,
+            still: Still {
+                since: now,
+                drift: (0.0, 0.0),
+                sent: false,
+            },
         };
         out
     }
 
     pub fn tick(&mut self, now: Duration) -> Vec<Output> {
-        match self.deadline() {
-            Some(deadline) if now >= deadline => {
+        if !self.deadline().is_some_and(|deadline| now >= deadline) {
+            return Vec::new();
+        }
+        match &mut self.state {
+            State::Pending { .. } => {
                 self.state = State::Holding;
                 vec![Output::Press]
             }
-            _ => Vec::new(),
+            State::Gesturing { still, .. } => {
+                still.sent = true;
+                vec![Output::Still]
+            }
+            State::Idle | State::Holding => Vec::new(),
         }
     }
 }
@@ -231,8 +288,8 @@ mod tests {
     #[test]
     fn quick_click_is_replayed() {
         let mut m = machine();
-        assert_eq!(m.press(ms(0)), []);
-        assert_eq!(m.motion(2.0, 1.0), []);
+        assert_eq!(m.press(ms(0)), [Down]);
+        assert_eq!(m.motion(2.0, 1.0, ms(0)), []);
         assert_eq!(m.release(), [Press, Release]);
     }
 
@@ -244,7 +301,7 @@ mod tests {
         assert_eq!(m.tick(ms(299)), []);
         assert_eq!(m.tick(ms(300)), [Press]);
         assert_eq!(m.deadline(), None);
-        assert_eq!(m.motion(-50.0, 0.0), [], "a hold drags; it never turns into a gesture");
+        assert_eq!(m.motion(-50.0, 0.0, ms(0)), [], "a hold drags; it never turns into a gesture");
         assert_eq!(m.release(), [Release]);
     }
 
@@ -252,23 +309,61 @@ mod tests {
     fn moving_past_the_threshold_starts_a_gesture() {
         let mut m = machine();
         m.press(ms(0));
-        assert_eq!(m.motion(-5.0, 0.0), []);
-        assert_eq!(m.motion(-5.0, 0.0), [Begin]);
-        assert_eq!(m.tick(ms(1000)), [], "a gesture never times out into a press");
+        assert_eq!(m.motion(-5.0, 0.0, ms(0)), []);
+        assert_eq!(m.motion(-5.0, 0.0, ms(0)), [Begin]);
+        assert_eq!(m.tick(ms(300)), [], "a gesture never times out into a press");
         let updates: Vec<_> = (0..10)
-            .flat_map(|_| m.motion(-5.0, 0.0))
+            .flat_map(|_| m.motion(-5.0, 0.0, ms(0)))
             .filter(|o| !matches!(o, Motion(..)))
             .collect();
         assert_eq!(updates, [Update("L".parse().unwrap())]);
-        assert_eq!(m.motion(-1.0, 2.0), [Motion(-1.0, 2.0)]);
+        assert_eq!(m.motion(-1.0, 2.0, ms(0)), [Motion(-1.0, 2.0)]);
         assert_eq!(ended(m.release()), Some("L".parse().unwrap()));
+    }
+
+    #[test]
+    fn holding_still_mid_gesture_says_so_once() {
+        let mut m = machine();
+        m.press(ms(0));
+        m.motion(-40.0, 0.0, ms(10));
+        assert_eq!(m.deadline(), Some(ms(710)));
+        // Moving on resets the clock; a jitter doesn't.
+        m.motion(-40.0, 0.0, ms(500));
+        m.motion(1.0, 1.0, ms(900));
+        assert_eq!(m.tick(ms(1199)), []);
+        assert_eq!(m.tick(ms(1200)), [Still]);
+        assert_eq!(m.deadline(), None, "only once");
+        assert_eq!(ended(m.release()), Some("L".parse().unwrap()), "release still ends it");
+
+        let mut never = Machine::new(&Settings {
+            cancel_ms: 0,
+            ..Settings::default()
+        });
+        never.press(ms(0));
+        never.motion(-40.0, 0.0, ms(0));
+        assert_eq!(never.deadline(), None);
+    }
+
+    #[test]
+    fn a_press_can_be_passed_to_the_app() {
+        let mut m = machine();
+        assert_eq!(m.press(ms(0)), [Down]);
+        assert_eq!(m.pass(), [Press]);
+        assert_eq!(m.motion(-50.0, 0.0, ms(5)), [], "a drag, not a gesture");
+        assert_eq!(m.release(), [Release]);
+
+        m.press(ms(0));
+        m.motion(-50.0, 0.0, ms(5));
+        assert_eq!(m.pass(), [Press], "even once it looked like a gesture");
+        assert_eq!(m.release(), [Release]);
+        assert_eq!(m.pass(), [], "too late: it's over");
     }
 
     #[test]
     fn click_while_moving_is_still_a_click() {
         let mut m = machine();
         m.press(ms(0));
-        assert_eq!(m.motion(9.0, 0.0), [Begin], "the trail shows");
+        assert_eq!(m.motion(9.0, 0.0, ms(0)), [Begin], "the trail shows");
         assert_eq!(m.release(), [Cancel, Press, Release], "but nothing was drawn");
     }
 
@@ -281,7 +376,7 @@ mod tests {
         m.tick(ms(300));
         assert_eq!(m.cancel(), [Release]);
         m.press(ms(0));
-        m.motion(20.0, 0.0);
+        m.motion(20.0, 0.0, ms(0));
         assert_eq!(m.cancel(), [Cancel]);
         assert_eq!(m.release(), []);
     }
@@ -289,21 +384,21 @@ mod tests {
     #[test]
     fn wheel_and_buttons_belong_to_the_gesture() {
         let mut m = machine();
-        assert_eq!(m.claim(Extra::Wheel(crate::Wheel::Up)), None, "idle: scroll normally");
+        assert_eq!(m.claim(Extra::Wheel(crate::Wheel::Up), ms(0)), None, "idle: scroll normally");
 
         m.press(ms(0));
         assert_eq!(
-            m.claim(Extra::Wheel(crate::Wheel::Up)),
+            m.claim(Extra::Wheel(crate::Wheel::Up), ms(0)),
             Some(vec![Begin, Wheel(crate::Wheel::Up)]),
             "a pending press becomes a gesture"
         );
-        assert_eq!(m.claim(Extra::Button(0x110)), Some(vec![Click(0x110)]));
+        assert_eq!(m.claim(Extra::Button(0x110), ms(0)), Some(vec![Click(0x110)]));
         assert_eq!(ended(m.release()), Some(Stroke::default()), "no click replay");
 
         m.press(ms(0));
         m.tick(ms(300));
         assert_eq!(
-            m.claim(Extra::Wheel(crate::Wheel::Down)),
+            m.claim(Extra::Wheel(crate::Wheel::Down), ms(0)),
             None,
             "a plain hold scrolls normally"
         );

@@ -11,7 +11,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, de};
 
-use crate::keys::Combo;
+use crate::keys::{Combo, Mods};
 use crate::shape::{self, Shape};
 use crate::stroke::Stroke;
 
@@ -126,6 +126,8 @@ pub struct Settings {
     pub threshold: f64,
     /// Holding the trigger this long without moving makes it a normal press.
     pub hold_ms: u64,
+    /// Holding still this long mid-stroke cancels the gesture. 0 never does.
+    pub cancel_ms: u64,
     /// Shorter direction runs are treated as noise.
     pub min_segment: f64,
     /// Only grab mice whose name contains one of these. Empty grabs all mice.
@@ -143,6 +145,7 @@ impl Default for Settings {
             trigger: Trigger::default(),
             threshold: 8.0,
             hold_ms: 300,
+            cancel_ms: 700,
             min_segment: 30.0,
             devices: Vec::new(),
             theme: "default".into(),
@@ -216,6 +219,8 @@ impl fmt::Display for Trigger {
 #[serde(try_from = "RawGesture")]
 pub struct Gesture {
     pub input: Input,
+    /// Modifier keys that must be held on the keyboard as it fires.
+    pub with: Mods,
     pub kind: Kind,
     pub action: Action,
     /// What the hint calls it, e.g. "Back".
@@ -228,15 +233,17 @@ impl Gesture {
         if let Some(name) = &self.name {
             return name.clone();
         }
-        let text = match &self.action {
-            Action::Keys(combo) => combo.to_string(),
-            Action::Command(command) | Action::Dispatch(command) => command.clone(),
-        };
+        let text = self.action.to_string();
         // Long commands shorten to their first 40 characters.
         match text.char_indices().nth(40) {
             Some((end, _)) => format!("{}…", &text[..end]),
             None => text,
         }
+    }
+
+    /// Whether `other` is drawn the same way, so only one of them can fire.
+    pub fn same_input(&self, other: &Gesture) -> bool {
+        self.input == other.input && self.with == other.with
     }
 }
 
@@ -287,6 +294,29 @@ pub enum Action {
     Command(String),
     /// A compositor dispatch, e.g. Hyprland's `workspace +1`.
     Dispatch(String),
+    /// A pause between the steps of a `Sequence`, in milliseconds.
+    Wait(u64),
+    /// Steps run one after another, each once the one before is done.
+    Sequence(Vec<Action>),
+}
+
+impl fmt::Display for Action {
+    /// The keys, command or dispatcher; a sequence's steps in turn.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Action::Keys(combo) => write!(f, "{combo}"),
+            Action::Command(text) | Action::Dispatch(text) => f.write_str(text),
+            Action::Wait(ms) => write!(f, "wait {ms} ms"),
+            Action::Sequence(steps) => {
+                let steps: Vec<String> = steps
+                    .iter()
+                    .filter(|s| !matches!(s, Action::Wait(_)))
+                    .map(Action::to_string)
+                    .collect();
+                f.write_str(&steps.join(", then "))
+            }
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -296,9 +326,11 @@ struct RawGesture {
     shape: Option<String>,
     wheel: Option<String>,
     click: Option<String>,
+    with: Option<String>,
     repeat: Option<bool>,
     step: Option<f64>,
-    action: RawAction,
+    #[serde(deserialize_with = "steps")]
+    action: Vec<RawAction>,
     name: Option<String>,
 }
 
@@ -308,8 +340,34 @@ struct RawAction {
     keys: Option<String>,
     command: Option<String>,
     dispatch: Option<String>,
+    wait: Option<u64>,
     /// Keys held down from the match until the trigger is let go.
     hold: Option<String>,
+}
+
+/// `action = { … }`, or a list of steps: `action = [{ … }, { … }]`.
+fn steps<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<RawAction>, D::Error> {
+    let step = |value: toml::Value| -> Result<RawAction, D::Error> {
+        value
+            .try_into()
+            .map_err(|e: toml::de::Error| de::Error::custom(e.message()))
+    };
+    match toml::Value::deserialize(d)? {
+        toml::Value::Array(steps) => steps.into_iter().map(step).collect(),
+        one => Ok(vec![step(one)?]),
+    }
+}
+
+impl RawAction {
+    fn parse(self) -> Result<Action, String> {
+        Ok(match (self.keys, self.command, self.dispatch, self.wait) {
+            (Some(keys), None, None, None) => Action::Keys(keys.parse()?),
+            (None, Some(command), None, None) => Action::Command(command),
+            (None, None, Some(dispatch), None) => Action::Dispatch(dispatch),
+            (None, None, None, Some(ms)) => Action::Wait(ms),
+            _ => return Err("an action needs exactly one of keys, command or dispatch".into()),
+        })
+    }
 }
 
 const DEFAULT_STEP: f64 = 80.0;
@@ -336,20 +394,21 @@ impl TryFrom<RawGesture> for Gesture {
             }),
             _ => return Err("a gesture needs exactly one of stroke, shape, wheel or click".into()),
         };
-        let RawAction {
-            keys,
-            command,
-            dispatch,
-            hold,
-        } = raw.action;
-        let action = match (keys, command, dispatch) {
-            (Some(keys), None, None) => Action::Keys(keys.parse()?),
-            (None, Some(command), None) => Action::Command(command),
-            (None, None, Some(dispatch)) => Action::Dispatch(dispatch),
-            _ => return Err("an action needs exactly one of keys, command or dispatch".into()),
+        let mut steps = raw.action;
+        if steps.len() > 1 && steps.iter().any(|s| s.hold.is_some()) {
+            return Err("`hold` only goes with keys, as the only step".into());
+        }
+        let hold = steps.first_mut().and_then(|s| s.hold.take());
+        let action = match steps.len() {
+            0 => return Err("an action list needs at least one step".into()),
+            1 => steps.pop().expect("one step").parse()?,
+            _ => Action::Sequence(steps.into_iter().map(RawAction::parse).collect::<Result<_, _>>()?),
         };
+        if matches!(action, Action::Wait(_)) {
+            return Err("`wait` only goes between the steps of a list".into());
+        }
         if hold.is_some() && !matches!(action, Action::Keys(_)) {
-            return Err("`hold` only goes with keys".into());
+            return Err("`hold` only goes with keys, as the only step".into());
         }
         let step = raw.step.unwrap_or(DEFAULT_STEP);
         if step <= 0.0 {
@@ -371,8 +430,19 @@ impl TryFrom<RawGesture> for Gesture {
         if !kind.continuous() && raw.step.is_some() {
             return Err("`step` only goes with repeat = true or hold".into());
         }
+        let with: Mods = match raw.with {
+            Some(with) => with.parse()?,
+            None => Mods::NONE,
+        };
+        // Keys still held on the keyboard would mix into the keys a gesture
+        // types, so these fire on release, and type once they're let go.
+        let on_release = matches!(input, Input::Stroke(_) | Input::Shape(_)) && !kind.continuous();
+        if !with.is_empty() && !on_release {
+            return Err("`with` only goes with strokes and shapes that don't repeat".into());
+        }
         Ok(Gesture {
             input,
+            with,
             kind,
             action,
             name: raw.name.filter(|n| !n.trim().is_empty()),
@@ -384,6 +454,8 @@ impl TryFrom<RawGesture> for Gesture {
 pub struct App {
     /// Window classes this app matches, compared case-insensitively.
     pub classes: Vec<String>,
+    /// Off, the triggers are ordinary buttons over this app.
+    pub enabled: bool,
     pub gestures: Vec<Gesture>,
 }
 
@@ -553,6 +625,8 @@ impl HintStyle {
 struct AppFile {
     #[serde(default, rename = "match")]
     classes: Vec<String>,
+    #[serde(default = "yes")]
+    enabled: bool,
     #[serde(default, rename = "gesture")]
     gestures: Vec<Gesture>,
 }
@@ -603,6 +677,7 @@ impl Config {
                 };
                 let app = App {
                     classes,
+                    enabled: file.enabled,
                     gestures: file.gestures,
                 };
                 let in_app = |e: String| format!("apps/{stem}.toml: {e}");
@@ -632,10 +707,7 @@ impl Config {
     /// the app doesn't override, then the one that opens the settings app,
     /// if nothing else uses its input and this isn't the settings app.
     pub fn gestures_for(&self, class: &str) -> Vec<Gesture> {
-        let app = self
-            .apps
-            .iter()
-            .find(|app| app.classes.iter().any(|c| c.eq_ignore_ascii_case(class)));
+        let app = self.app(class);
         let mut gestures = match self.settings.global_trigger {
             Some(_) => Vec::new(),
             None => self.global.clone(),
@@ -643,12 +715,13 @@ impl Config {
         gestures.extend(merged(app.map_or(&[], |a| &a.gestures), &self.gestures));
         let settings = Gesture {
             input: self.open_settings.clone(),
+            with: Mods::NONE,
             kind: Kind::Oneshot,
             action: Action::Command("mousewand-settings".into()),
             name: Some("mousewand settings".into()),
         };
         let in_settings = SETTINGS_CLASSES.iter().any(|c| c.eq_ignore_ascii_case(class));
-        if !in_settings && !gestures.iter().any(|g| g.input == settings.input) {
+        if !in_settings && !gestures.iter().any(|g| g.same_input(&settings)) {
             gestures.push(settings);
         }
         gestures
@@ -658,6 +731,29 @@ impl Config {
     pub fn global_gestures(&self) -> Vec<Gesture> {
         self.global.clone()
     }
+
+    /// Whether gestures work over a window of `class`. An app file can turn
+    /// them off, and then both triggers are ordinary buttons there.
+    pub fn enabled_for(&self, class: &str) -> bool {
+        self.app(class).is_none_or(|app| app.enabled)
+    }
+
+    /// Whether any gesture needs to know which modifier keys are held.
+    pub fn uses_modifiers(&self) -> bool {
+        let apps = self.apps.iter().flat_map(|a| &a.gestures);
+        let mut all = self.gestures.iter().chain(&self.global).chain(apps);
+        all.any(|g| !g.with.is_empty())
+    }
+
+    fn app(&self, class: &str) -> Option<&App> {
+        self.apps
+            .iter()
+            .find(|app| app.classes.iter().any(|c| c.eq_ignore_ascii_case(class)))
+    }
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// The settings app's window classes: its binary's name, and its app id.
@@ -747,7 +843,7 @@ fn resolve_input(input: &mut Input, shapes: &[Shape]) -> Result<(), String> {
     if let Input::Shape(named) = input {
         *named = shapes.iter().find(|s| *s == named).cloned().ok_or_else(|| {
             format!(
-                "there's no shape called \"{}\": use circle, or draw it in the settings app",
+                "there's no shape called \"{}\": use a built-in one like circle or star, or draw it in the settings app",
                 named.name
             )
         })?;
@@ -756,7 +852,7 @@ fn resolve_input(input: &mut Input, shapes: &[Shape]) -> Result<(), String> {
 }
 
 fn merged(app: &[Gesture], global: &[Gesture]) -> Vec<Gesture> {
-    let overridden = |g: &Gesture| app.iter().any(|a| a.input == g.input);
+    let overridden = |g: &Gesture| app.iter().any(|a| a.same_input(g));
     app.iter()
         .chain(global.iter().filter(|g| !overridden(g)))
         .cloned()
@@ -766,22 +862,26 @@ fn merged(app: &[Gesture], global: &[Gesture]) -> Vec<Gesture> {
 /// Global gestures sharing the trigger can't be overridden, so nothing else
 /// may use their input.
 fn check_global(global: &[Gesture], others: &[Gesture]) -> Result<(), String> {
-    match others.iter().find(|o| global.iter().any(|g| g.input == o.input)) {
+    match others.iter().find(|o| global.iter().any(|g| g.same_input(o))) {
         Some(taken) => Err(format!(
             "{} is already a [global] gesture, which no app overrides",
-            describe(&taken.input)
+            describe(taken)
         )),
         None => Ok(()),
     }
 }
 
-fn describe(input: &Input) -> String {
-    match input {
+fn describe(gesture: &Gesture) -> String {
+    let input = match &gesture.input {
         Input::Stroke(stroke) => format!("stroke {stroke}"),
         Input::Shape(shape) => format!("shape {}", shape.name),
         Input::Wheel(wheel) => format!("wheel {wheel:?}").to_lowercase(),
         Input::Click(BTN_LEFT) => "click left".into(),
         Input::Click(_) => "click right".into(),
+    };
+    match gesture.with.is_empty() {
+        true => input,
+        false => format!("{input} with {}", gesture.with),
     }
 }
 
@@ -792,6 +892,7 @@ fn check_prefixes(gestures: &[Gesture]) -> Result<(), String> {
         let Input::Stroke(prefix) = &short.input else { continue };
         for long in gestures {
             if let Input::Stroke(stroke) = &long.input
+                && long.with == short.with
                 && stroke.0.len() > prefix.0.len()
                 && stroke.0.starts_with(&prefix.0)
             {
@@ -984,7 +1085,7 @@ mod tests {
 
         let c = Config::parse("open_settings = { stroke = \"U39D\" }", &[], &[]).unwrap();
         assert_eq!(opens(&c, "kitty"), Some(stroke("U39D")));
-        let bad = Config::parse("open_settings = { shape = \"star\" }", &[], &[]).unwrap_err();
+        let bad = Config::parse("open_settings = { shape = \"bolt\" }", &[], &[]).unwrap_err();
         assert!(bad.contains("no shape called"), "{bad}");
         assert!(
             Config::parse("open_settings = {}", &[], &[])
@@ -1002,15 +1103,17 @@ mod tests {
         );
         let c = Config::parse(&gesture("triangle"), &[], std::slice::from_ref(&triangle)).unwrap();
         let names: Vec<&str> = c.shapes.iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(names, ["circle", "triangle"]);
+        assert_eq!(names.len(), shape::BUILT_IN.len());
+        assert_eq!(names[..2], ["circle", "square"], "a taught shape replaces the built-in one");
+        assert_eq!(names.last(), Some(&"triangle"));
         assert!(matches!(&c.gestures[0].input, Input::Shape(s) if s.name == "triangle"));
 
-        let bad = Config::parse(&gesture("star"), &[], &[]).unwrap_err();
+        let bad = Config::parse(&gesture("bolt"), &[], &[]).unwrap_err();
         assert!(
-            bad.contains("config.toml") && bad.contains("no shape called \"star\""),
+            bad.contains("config.toml") && bad.contains("no shape called \"bolt\""),
             "{bad}"
         );
-        let bad = Config::parse("", &[("x".into(), gesture("star"))], &[triangle]).unwrap_err();
+        let bad = Config::parse("", &[("x".into(), gesture("bolt"))], &[triangle]).unwrap_err();
         assert!(bad.contains("apps/x.toml"), "{bad}");
         let repeat = Config::parse(&gesture("circle").replace("action", "repeat = true\naction"), &[], &[]);
         assert!(repeat.unwrap_err().contains("only strokes"));
@@ -1195,6 +1298,88 @@ mod tests {
         );
         assert_eq!("#00ff00".parse::<Rgba>().unwrap().0[3], 1.0);
         assert!("#00ff0".parse::<Rgba>().is_err() && "00ff00".parse::<Rgba>().is_err());
+    }
+
+    #[test]
+    fn action_lists_run_in_turn() {
+        let c = Config::parse(
+            r#"
+            [[gesture]]
+            stroke = "D"
+            action = [{ keys = "ctrl+c" }, { wait = 150 }, { command = "wl-paste | wc -c" }]
+
+            [[gesture]]
+            stroke = "U"
+            action = [{ keys = "ctrl+t" }]
+            "#,
+            &[],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            c.gestures[0].action,
+            Action::Sequence(vec![
+                Action::Keys("ctrl+c".parse().unwrap()),
+                Action::Wait(150),
+                Action::Command("wl-paste | wc -c".into()),
+            ])
+        );
+        assert_eq!(c.gestures[0].label(), "ctrl+c, then wl-paste | wc -c");
+        assert_eq!(c.gestures[1].action, Action::Keys("ctrl+t".parse().unwrap()), "one step is just that step");
+
+        let bad = |a: &str| Config::parse(&format!("[[gesture]]\nstroke = \"L\"\naction = {a}"), &[], &[]).unwrap_err();
+        assert!(bad("[]").contains("at least one step"));
+        assert!(bad("{ wait = 100 }").contains("between the steps"));
+        assert!(bad("[{ keys = \"a\", hold = \"alt\" }, { keys = \"b\" }]").contains("only step"));
+        assert!(bad("[{ keys = \"a\" }, { key = \"b\" }]").contains("there's no `key` here"));
+        assert!(bad("[{ keys = \"a\", command = \"b\" }]").contains("exactly one"));
+    }
+
+    #[test]
+    fn modifiers_make_another_gesture() {
+        let main = r#"
+            [[gesture]]
+            stroke = "L"
+            action = { keys = "alt+Left" }
+
+            [[gesture]]
+            stroke = "L"
+            with = "shift"
+            action = { keys = "ctrl+shift+Tab" }
+
+            [[gesture]]
+            stroke = "R"
+            repeat = true
+            action = { keys = "ctrl+Tab" }
+
+            [[gesture]]
+            stroke = "RD"
+            with = "ctrl"
+            action = { keys = "ctrl+w" }
+        "#;
+        let c = Config::parse(main, &[], &[]).unwrap();
+        assert!(c.uses_modifiers());
+        assert_eq!(c.gestures[1].with, "shift".parse().unwrap());
+        // An app overriding the plain L leaves the shifted one alone.
+        let app = "[[gesture]]\nstroke = \"L\"\naction = { keys = \"a\" }";
+        let c = Config::parse(main, &[("x".into(), app.into())], &[]).unwrap();
+        let ls: Vec<_> = c.gestures_for("x").into_iter().filter(|g| g.input == stroke("L")).collect();
+        assert_eq!(ls.len(), 2);
+
+        let bad = |g: &str| Config::parse(&format!("[[gesture]]\n{g}\naction = {{ keys = \"a\" }}"), &[], &[]).unwrap_err();
+        assert!(bad("stroke = \"L\"\nwith = \"shift\"\nrepeat = true").contains("don't repeat"));
+        assert!(bad("wheel = \"up\"\nwith = \"ctrl\"").contains("strokes and shapes"));
+        assert!(bad("stroke = \"L\"\nwith = \"q\"").contains("isn't a modifier"));
+        assert!(!Config::parse("", &[], &[]).unwrap().uses_modifiers());
+    }
+
+    #[test]
+    fn apps_can_turn_gestures_off() {
+        let off = "match = [\"blender\"]\nenabled = false";
+        let c = Config::parse(MAIN, &[("blender".into(), off.into())], &[]).unwrap();
+        assert!(!c.enabled_for("Blender"));
+        assert!(c.enabled_for("firefox"));
+        assert_eq!(c.settings.cancel_ms, 700);
     }
 
     #[test]
