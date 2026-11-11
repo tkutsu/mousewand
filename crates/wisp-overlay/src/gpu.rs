@@ -106,6 +106,13 @@ impl Gpu {
             .surface
             .get_default_config(&self.adapter, width, height)
             .context("surface isn't supported by the adapter")?;
+        // Compositors blend buffers as premultiplied sRGB. On an sRGB format
+        // the GPU would encode the premultiplied values, which brightens and
+        // whitens everything partly transparent, like the glow.
+        let plain = config.format.remove_srgb_suffix();
+        if caps.formats.contains(&plain) {
+            config.format = plain;
+        }
         config.alpha_mode = alpha_mode;
         config.present_mode = wgpu::PresentMode::Fifo;
         target.surface.configure(&self.device, &config);
@@ -171,7 +178,14 @@ impl Gpu {
         {
             return pipeline.clone();
         }
-        let blend = wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING;
+        // Max, not over: where the ribbon crosses or folds over itself, as it
+        // does at sharp turns, it stays as bright as one layer.
+        let max = wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::One,
+            operation: wgpu::BlendOperation::Max,
+        };
+        let blend = wgpu::BlendState { color: max, alpha: max };
         let pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("trail"),
             layout: None,

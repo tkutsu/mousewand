@@ -37,7 +37,7 @@ use gpu::{Gpu, Target};
 use scene::Scene;
 use wisp_core::Theme;
 
-/// The layer namespace, so users can write `layerrule = noanim, wisp`.
+/// The layer namespace, for compositors' layer rules.
 pub const NAMESPACE: &str = "wisp";
 
 enum Command {

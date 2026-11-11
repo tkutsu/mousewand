@@ -26,6 +26,7 @@ Keys and dispatchers go to the window the gesture was drawn over: wisp focuses i
 
 wisp sets up what it can on its own when it starts:
 
+- **Hyprland**: adds a layer rule that turns off Hyprland's animation for the trail, so it doesn't slide in as you start drawing. The rule lives only in the running Hyprland, and wisp adds it again after every config reload.
 - **GNOME**: installs its Shell extension in `~/.local/share/gnome-shell/extensions` and enables it, and updates it when wisp updates. GNOME starts new extensions only at login, so log out and back in once; until then gestures work, but only the global ones, and without the trail.
 - **niri**: adds `focus-follows-mouse` to the `input` section of `config.kdl`, after `niri validate` accepts the change, and keeps the old file as `config.kdl.wisp-backup`. It does this once: remove the setting and wisp leaves it out.
 - **X11**: the trail needs a compositing manager. If none is running, wisp starts picom (without any picom config, so no shadows or fades) and stops it when it stops.
@@ -137,7 +138,7 @@ wisp grabs your mice through evdev and forwards everything through one virtual u
 | `wisp-overlay` | The trail: a layer-shell surface drawn with wgpu. |
 | `wisp` | The daemon. |
 
-The trail's surface exists only while you draw: plain clicks never create one, so it can't get in the way of fullscreen games or video. The GPU device starts once with the daemon so each gesture only pays for a surface. Its layer namespace is `wisp`; turn off Hyprland's layer animation for it with a `noanim` layer rule so the trail appears instantly.
+The trail's surface exists only while you draw: plain clicks never create one, so it can't get in the way of fullscreen games or video. The GPU device starts once with the daemon so each gesture only pays for a surface. Its layer namespace is `wisp`.
 
 `cargo run -p wisp-input --example probe` tests the input path against a fake mouse without touching your desktop.
 

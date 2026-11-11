@@ -1,6 +1,6 @@
 //! Hyprland, over its request socket (`.socket.sock`).
 
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
@@ -32,6 +32,16 @@ impl Monitor {
     }
 }
 
+/// Hyprland animates layer surfaces as they map, which would slide the trail
+/// in from an edge. These turn that off for wisp's layer namespace, as Lua
+/// config (0.55+), 0.53's rule syntax, and the older one take it.
+const NO_ANIMATION: [&str; 3] = [
+    r#"eval hl.layer_rule({ match = { namespace = "^wisp$" }, animation = "none" })"#,
+    "keyword layerrule no_anim on, match:namespace ^wisp$",
+    "keyword layerrule noanim, ^wisp$",
+];
+
+#[derive(Clone)]
 pub struct Hyprland {
     socket: PathBuf,
 }
@@ -55,6 +65,13 @@ impl Hyprland {
     fn json<T: DeserializeOwned>(&self, what: &str) -> anyhow::Result<T> {
         let reply = self.request(&format!("j/{what}"))?;
         serde_json::from_str(&reply).with_context(|| format!("parsing hyprctl {what}"))
+    }
+
+    /// Adds the layer rule in [`NO_ANIMATION`]; false if no form took.
+    fn no_animation(&self) -> bool {
+        NO_ANIMATION
+            .iter()
+            .any(|request| self.request(request).is_ok_and(|reply| reply.trim() == "ok"))
     }
 
     fn dispatch_checked(&self, command: &str) -> anyhow::Result<()> {
@@ -214,6 +231,31 @@ impl Backend for Hyprland {
 
     fn dispatch(&self, command: &str) -> anyhow::Result<()> {
         self.dispatch_checked(command)
+    }
+
+    /// A rule added at runtime lasts until the config reloads, so this adds
+    /// it again on every reload, watching the event socket.
+    fn setup(&mut self) -> Vec<String> {
+        if !self.no_animation() {
+            return vec![
+                "wisp couldn't turn off Hyprland's layer animation for its trail, so the trail may slide in as \
+                 you start drawing. Add a layer rule with no animation for the `wisp` namespace."
+                    .into(),
+            ];
+        }
+        let hyprland = self.clone();
+        let events = self.socket.with_file_name(".socket2.sock");
+        std::thread::spawn(move || {
+            let Ok(stream) = UnixStream::connect(&events) else {
+                return;
+            };
+            for line in BufReader::new(stream).lines().map_while(Result::ok) {
+                if line.starts_with("configreloaded>>") && !hyprland.no_animation() {
+                    log::warn!("couldn't add the layer rule again after a config reload");
+                }
+            }
+        });
+        Vec::new()
     }
 }
 
