@@ -253,10 +253,7 @@ impl State {
     fn paint_hint(&mut self) {
         let Some(active) = &mut self.active else { return };
         active.hint_image = match (&active.hint, self.hint_style.enabled) {
-            (Some(hint), true) => {
-                self.painter
-                    .paint(hint, &self.hint_style, self.theme.rejected, active.scale.max(1) as f32)
-            }
+            (Some(hint), true) => self.painter.paint(hint, &self.hint_style, active.scale.max(1) as f32),
             _ => None,
         };
     }

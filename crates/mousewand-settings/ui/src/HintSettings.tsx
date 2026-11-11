@@ -1,9 +1,9 @@
 // The hint: on or off, how it looks, and an example drawn the way the
 // overlay draws it.
 
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import type { Hint } from "./api";
-import { Row, Section, Switch } from "./ui";
+import { Row, Section, Segmented, Switch } from "./ui";
 
 type Look = Pick<Hint, "text" | "glyph" | "background" | "radius">;
 
@@ -40,11 +40,12 @@ function dim(color: string, by: number): string {
 
 export default function HintSettings({ hint, onChange }: { hint: Hint; onChange: (hint: Hint) => void }) {
   const set = (patch: Partial<Hint>) => onChange({ ...hint, ...patch });
+  const [example, setExample] = useState<"drawing" | "failed">("drawing");
   const [v, h] = cell(hint.position);
   const chosen = STYLES.find(([, look]) => (Object.keys(look) as (keyof Look)[]).every((k) => look[k] === hint[k]));
 
   /** A color picker that keeps the color's alpha. */
-  const color = (key: "text" | "glyph" | "background", label: string) => (
+  const color = (key: "text" | "glyph" | "failed" | "background", label: string) => (
     <label className="flex items-center gap-1.5 text-[12px] text-ink-2">
       <input
         type="color"
@@ -62,8 +63,16 @@ export default function HintSettings({ hint, onChange }: { hint: Hint; onChange:
         <Switch label="Show a hint" on={hint.enabled} onChange={(enabled) => set({ enabled })} />
       </Row>
       <div className={`flex flex-col divide-y divide-line transition-opacity ${hint.enabled ? "" : "opacity-50"}`}>
-        <div className="p-3">
-          <Preview hint={hint} />
+        <div className="flex flex-col items-center gap-2 p-3">
+          <Preview hint={hint} failed={example === "failed"} />
+          <Segmented
+            value={example}
+            options={[
+              ["drawing", "Drawing"],
+              ["failed", "No match"],
+            ]}
+            onChange={setExample}
+          />
         </div>
         <Row label="Style">
           <div className="flex gap-1.5">
@@ -87,6 +96,7 @@ export default function HintSettings({ hint, onChange }: { hint: Hint; onChange:
         <Row label="Colors">
           {color("text", "Text")}
           {color("glyph", "Arrows")}
+          {color("failed", "Failed")}
           {color("background", "Background")}
         </Row>
         <Row label="Position" hint="Where on the screen it shows">
@@ -169,11 +179,14 @@ const MARGIN = 20;
  * the main line goes where the position says, and the next moves hang off
  * it: above at the bottom, below elsewhere.
  */
-function Preview({ hint }: { hint: Hint }) {
+function Preview({ hint, failed }: { hint: Hint; failed: boolean }) {
   const size = hint.size;
   const small = size * 0.82;
-  const main = { stroke: "D", label: "Reload", size, arrow: dim(hint.glyph, 1), text: dim(hint.text, 0.75), next: false };
-  const next = hint.next
+  // A stroke that can't become any gesture: only its arrows, in the failed color.
+  const main = failed
+    ? { stroke: "DL", label: "", size, arrow: dim(hint.failed, 1), text: "", next: false }
+    : { stroke: "D", label: "Reload", size, arrow: dim(hint.glyph, 1), text: dim(hint.text, 0.75), next: false };
+  const next = hint.next && !failed
     ? [
         { stroke: "R", label: "Close tab" },
         { stroke: "RU", label: "Reopen closed tab" },
@@ -195,7 +208,7 @@ function Preview({ hint }: { hint: Hint }) {
   };
   return (
     <div
-      className="relative h-56 overflow-hidden rounded-lg border border-line bg-gradient-to-br from-[#5b7fa8] via-[#8a76a6] to-[#d29a7a]"
+      className="relative h-56 w-full overflow-hidden rounded-lg border border-line bg-gradient-to-br from-[#5b7fa8] via-[#8a76a6] to-[#d29a7a]"
       style={{ fontFamily: hint.font }}
     >
       <div className="absolute flex flex-col opacity-90" style={panel}>
@@ -210,9 +223,11 @@ function Preview({ hint }: { hint: Hint }) {
                 <Arrow key={j} angle={ANGLES[d]} size={row.size} color={row.arrow} />
               ))}
             </div>
-            <span style={{ fontSize: row.size, color: row.text, marginLeft: row.size * 0.45, lineHeight: 1 }}>
-              {row.label}
-            </span>
+            {row.label && (
+              <span style={{ fontSize: row.size, color: row.text, marginLeft: row.size * 0.45, lineHeight: 1 }}>
+                {row.label}
+              </span>
+            )}
           </div>
         ))}
       </div>

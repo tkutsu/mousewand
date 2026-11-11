@@ -59,6 +59,8 @@ pub struct Hint {
     /// Colors as "#rrggbb" or "#rrggbbaa".
     pub text: String,
     pub glyph: String,
+    /// The arrows and text once the stroke matches nothing.
+    pub failed: String,
     pub background: String,
     pub radius: f64,
 }
@@ -75,6 +77,7 @@ impl From<&HintStyle> for Hint {
             size: float(style.size),
             text: style.text.to_string(),
             glyph: style.glyph.to_string(),
+            failed: style.failed.to_string(),
             background: style.background.to_string(),
             radius: float(style.radius),
         }
@@ -454,6 +457,7 @@ fn edit_main(text: &str, settings: &Settings, global: &[Gesture]) -> Result<Stri
         table["size"] = number(hint.size);
         table["text"] = value(&hint.text);
         table["glyph"] = value(&hint.glyph);
+        table["failed"] = value(&hint.failed);
         table["background"] = value(&hint.background);
         table["radius"] = number(hint.radius);
     }
@@ -741,6 +745,7 @@ mod tests {
             enabled: true,
             position: "top right".into(),
             background: "#ffffffcc".into(),
+            failed: "#c0392b".into(),
             radius: 6.0,
             ..settings.hint
         };

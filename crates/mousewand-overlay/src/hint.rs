@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use ab_glyph::{Font, FontVec, OutlineCurve, PxScale, ScaleFont};
 use mousewand_core::hint::{Hint, State};
-use mousewand_core::{Align, Color, Dir, HintStyle, Rgba};
+use mousewand_core::{Align, Dir, HintStyle, Rgba};
 use tiny_skia::{FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Rect, Transform};
 
 /// Premultiplied RGBA pixels.
@@ -51,16 +51,16 @@ fn next_above(style: &HintStyle) -> bool {
 impl Painter {
     /// The hint at `scale` (physical pixels per logical one), or `None` if
     /// there's nothing to show.
-    pub fn paint(&mut self, hint: &Hint, style: &HintStyle, rejected: Color, scale: f32) -> Option<Image> {
+    pub fn paint(&mut self, hint: &Hint, style: &HintStyle, scale: f32) -> Option<Image> {
         let font = self.font(&style.font);
         let size = style.size * scale;
         let small = size * 0.82;
         let dim = |c: Rgba, f: f32| [c.0[0], c.0[1], c.0[2], c.0[3] * f];
-        // A miss shows only its arrows, in the trail's rejected color.
+        // A miss shows only its arrows, in the failed color.
         let (arrow, text) = match hint.state {
             State::Drawing => (style.glyph.0, dim(style.text, 0.75)),
             State::Fired => (style.glyph.0, style.text.0),
-            State::Missed => ([rejected.0[0], rejected.0[1], rejected.0[2], 1.0], style.text.0),
+            State::Missed => (style.failed.0, style.failed.0),
         };
         let label = hint.label.as_deref().filter(|_| hint.state != State::Missed);
         let main = (!hint.stroke.0.is_empty() || label.is_some()).then(|| Row {
@@ -365,9 +365,7 @@ mod tests {
         let stroke: Stroke = "D".parse().unwrap();
         let hint = Hint::drawing(&config.gestures, &stroke, true);
         let mut painter = Painter::default();
-        let image = painter
-            .paint(&hint, &config.hint, Color([1.0, 0.0, 0.0]), 1.0)
-            .expect("a hint");
+        let image = painter.paint(&hint, &config.hint, 1.0).expect("a hint");
         assert!(image.width > 40 && image.height > 40);
         // The corner is rounded off, the middle is filled.
         assert_eq!(image.pixels[3], 0);
@@ -382,7 +380,7 @@ mod tests {
         );
 
         let empty = Hint::drawing(&[], &Stroke::default(), true);
-        assert!(painter.paint(&empty, &config.hint, Color([1.0; 3]), 1.0).is_none());
+        assert!(painter.paint(&empty, &config.hint, 1.0).is_none());
     }
 
     #[test]
@@ -402,12 +400,7 @@ mod tests {
                 ..config.hint.clone()
             };
             let image = painter
-                .paint(
-                    &Hint::drawing(&config.gestures, &stroke, next),
-                    &style,
-                    Color([1.0; 3]),
-                    1.0,
-                )
+                .paint(&Hint::drawing(&config.gestures, &stroke, next), &style, 1.0)
                 .unwrap();
             let (_, y) = place(&style, &image, (1000, 800), 1.0);
             (y + image.main.0, image.height)
@@ -425,18 +418,9 @@ mod tests {
         let style = HintStyle::default();
         let stroke: Stroke = "LR".parse().unwrap();
         let mut painter = Painter::default();
-        let missed = painter.paint(&Hint::missed(&stroke), &style, Color([1.0, 0.0, 0.0]), 1.0);
-        let fired = painter.paint(
-            &Hint::fired(&stroke, "Something long".into()),
-            &style,
-            Color([1.0; 3]),
-            1.0,
-        );
+        let missed = painter.paint(&Hint::missed(&stroke), &style, 1.0);
+        let fired = painter.paint(&Hint::fired(&stroke, "Something long".into()), &style, 1.0);
         assert!(missed.unwrap().width < fired.unwrap().width, "no label on a miss");
-        assert!(
-            painter
-                .paint(&Hint::missed(&Stroke::default()), &style, Color([1.0; 3]), 1.0)
-                .is_none()
-        );
+        assert!(painter.paint(&Hint::missed(&Stroke::default()), &style, 1.0).is_none());
     }
 }
