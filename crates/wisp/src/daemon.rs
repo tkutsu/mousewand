@@ -155,7 +155,9 @@ pub fn path() -> anyhow::Result<std::ffi::OsString> {
 }
 
 /// Runs a shell command without waiting for it. It sees the window in
-/// `WISP_CLASS` and `WISP_TITLE`, and wisp's directory in `PATH`.
+/// `WISP_CLASS` and `WISP_TITLE`, and wisp's directory in `PATH`. A command
+/// that isn't installed gets a notification, since a gesture that does
+/// nothing looks like wisp's fault.
 fn spawn(command: &str, window: &Window) -> anyhow::Result<()> {
     let mut child = Command::new("sh")
         .args(["-c", command])
@@ -165,6 +167,23 @@ fn spawn(command: &str, window: &Window) -> anyhow::Result<()> {
         .stdin(Stdio::null())
         .spawn()
         .with_context(|| format!("running {command:?}"))?;
-    thread::spawn(move || child.wait());
+    let command = command.to_owned();
+    thread::spawn(move || {
+        // sh exits with 127 when it can't find the program.
+        if child.wait().is_ok_and(|status| status.code() == Some(127))
+            && let Err(e) = crate::notes::notify("wisp: command not found", &not_found(&command), false)
+        {
+            log::warn!("can't show a notification: {e:#}");
+        }
+    });
     Ok(())
+}
+
+fn not_found(command: &str) -> String {
+    if command == "wisp-settings" {
+        return "Drawing a W opens the settings app, wisp-settings, which isn't installed. \
+                The README's Settings app section shows how to build it."
+            .into();
+    }
+    format!("A gesture ran `{command}`, and the shell couldn't find it.")
 }

@@ -80,7 +80,7 @@ action = { keys = "alt+Left" }
 Actions:
 
 - `keys`: a key combo like `"ctrl+shift+t"`, typed into the window the stroke started on. Keys are physical (US QWERTY positions), whatever your layout.
-- `command`: a shell command. It gets `$WISP_CLASS` and `$WISP_TITLE`.
+- `command`: a shell command. It gets `$WISP_CLASS` and `$WISP_TITLE`. If the program isn't installed, a notification says so, and for the W gesture, how to install the settings app.
 - `dispatch`: a Hyprland dispatcher, passed as is. Lua-config Hyprland takes `'hl.dsp.focus({ workspace = "e+1" })'`; older versions take `"workspace e+1"`.
 
 Each gesture has exactly one input:

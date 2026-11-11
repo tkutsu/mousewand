@@ -59,30 +59,34 @@ fn open(dir: &Path, notes: &[String]) -> anyhow::Result<()> {
         }
         Err(e) => {
             log::info!("no wisp-settings ({e}), so the notes go in a notification");
-            notify(notes).with_context(|| format!("the notes are in {}", dir.join("notes").display()))
+            notify("Setting up wisp", &notes.join("\n\n"), true)
+                .with_context(|| format!("the notes are in {}", dir.join("notes").display()))
         }
     }
 }
 
-fn notify(notes: &[String]) -> anyhow::Result<()> {
+/// A desktop notification. A `sticky` one stays until dismissed. Backticks
+/// are dropped: notifications show plain text.
+pub fn notify(summary: &str, body: &str, sticky: bool) -> anyhow::Result<()> {
     let bus = zbus::blocking::Connection::session()?;
-    let body = notes.join("\n\n").replace('`', "");
+    let body = body.replace('`', "");
     let hints: HashMap<&str, zbus::zvariant::Value> = HashMap::new();
     bus.call_method(
         Some("org.freedesktop.Notifications"),
         "/org/freedesktop/Notifications",
         Some("org.freedesktop.Notifications"),
         "Notify",
-        // App, replaces, icon, summary, body, actions, hints, timeout (0: stays).
+        // App, replaces, icon, summary, body, actions, hints, timeout (0:
+        // stays, -1: the server's default).
         &(
             "wisp",
             0u32,
             "input-mouse",
-            "Setting up wisp",
+            summary,
             body,
             Vec::<&str>::new(),
             hints,
-            0i32,
+            if sticky { 0i32 } else { -1 },
         ),
     )?;
     Ok(())
