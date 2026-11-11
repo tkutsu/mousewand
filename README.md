@@ -4,15 +4,15 @@
 
 <p align="center">Mouse gestures for every Linux desktop.<br>Hold a button, draw a stroke, and the window under it does what you meant.</p>
 
-<p align="center"><img src="docs/demo.gif" width="800" alt="Drawing a stroke to the left in Firefox goes back a page, and a stroke to the right goes forward again, each leaving a short orange trail."></p>
+<p align="center"><img src="docs/demo.gif" width="800" alt="Drawing a stroke to the left in Firefox goes back a page, and a stroke to the right goes forward again. Each leaves a short orange trail, and a hint at the bottom names the gesture and what the stroke could still become."></p>
 
 ## Why mousewand
 
 - **Works on nearly every desktop.** Hyprland, KDE Plasma, GNOME, sway, niri, COSMIC, labwc, and X11 desktops like Xfce, Cinnamon, MATE and i3. It finds your compositor on its own.
 - **Different gestures for each app.** The same stroke can go back in Firefox and switch tabs in your terminal. The window under the cursor decides.
 - **Stays out of your way.** A quick middle click is still a middle click, so pasting works. Holding the button still is still a drag or an autoscroll.
-- **You see what you draw.** A smooth, glowing trail follows the stroke, and turns red when nothing matches. Its color, width and glow are yours to theme.
-- **More than strokes.** Spin the wheel or click the other buttons while holding the trigger. Strokes can repeat as you keep moving, for scrubbing through tabs, or hold keys down, for a real alt-tab.
+- **You see what you draw.** A smooth, glowing trail follows the stroke, and turns red when nothing matches. Turn on hints to see the stroke so far, what it could still become, and the name of what fired.
+- **More than strokes.** Spin the wheel or click the other buttons while holding the trigger. Strokes can repeat as you keep moving, for scrubbing through tabs, or hold keys down, for a real alt-tab. Global gestures can live on a button of their own.
 - **Sets itself up.** It installs what your desktop needs, like GNOME's extension, and tells you once about anything left for you to do.
 - **Plain text config, applied on save.** Or draw a W to open the settings app.
 
@@ -57,7 +57,7 @@ mkdir -p ~/.config/mousewand
 cp -r examples/* ~/.config/mousewand/
 ```
 
-They give Firefox back, forward, new tab, close tab and reopen tab, kitty tab switching, volume on the wheel, and an alt-tab. The two workspace gestures in `config.toml` are for Hyprland; remove them elsewhere.
+They give Firefox back, forward, new tab, close tab and reopen tab, kitty tab switching, volume on the wheel, an alt-tab, and hints. The two workspace gestures in `config.toml` are for Hyprland; remove them elsewhere.
 
 A gesture is a stroke and an action:
 
@@ -67,6 +67,7 @@ match = ["firefox", "librewolf"]
 
 [[gesture]]
 stroke = "L"                   # draw left…
+name = "Back"                  # …which hints call "Back"…
 action = { keys = "alt+Left" } # …to go back
 ```
 
@@ -99,17 +100,17 @@ Anything it can't do for you, like turning on focus-follows-mouse in labwc or CO
 
 ```
 ~/.config/mousewand/
-  config.toml         settings and gestures for every window
+  config.toml         settings, gestures for every app, global gestures, hints
   apps/<class>.toml   gestures for one app, by window class
   themes/<name>.toml  trail looks, picked with theme = "<name>"
 ```
 
-App gestures override global ones with the same input. A broken file is reported in the log, and the last good config stays in use.
+An app's gestures replace the ones in `config.toml` with the same input. A broken file is reported in the log, and the last good config stays in use.
 
 ### Settings
 
 ```toml
-trigger = "middle"   # middle, side, extra, forward, back or task
+trigger = "middle"   # middle, side, extra (mouse 5), forward, back or task
 threshold = 8        # movement, in px, before a press becomes a gesture
 hold_ms = 300        # holding still this long makes it a normal press
 min_segment = 30     # shorter strokes are ignored as noise
@@ -137,6 +138,44 @@ A stroke can keep firing while you hold the trigger:
 - `kind = "hold"` with `hold = "alt"` does the same with those keys held down until you let go. `stroke = "9"`, `kind = "hold"`, `hold = "alt"`, `action = { keys = "Tab" }` is a real alt-tab.
 
 A repeating stroke fires as soon as it's recognized, so no other stroke may start with it; mousewand rejects such a config with an error.
+
+Any gesture can have a `name`, which hints show. Without one, they show its keys or command.
+
+### Global gestures
+
+Gestures under `[global]` are the same in every app, and no app file can replace them; a config that tries is rejected. Give them a `trigger` of their own, and that button runs them and nothing else, while the main trigger keeps the app gestures:
+
+```toml
+[global]
+trigger = "side"     # optional; without it they share the main trigger
+
+[[global.gesture]]
+stroke = "RU"
+name = "Next workspace"
+action = { dispatch = 'hl.dsp.focus({ workspace = "e+1" })' }
+```
+
+On their own button, `keys` go to whichever window has focus, not the one under the cursor.
+
+### Hints
+
+A small panel that shows the stroke so far as arrows, with the gesture it matches, a list of what it could still become, and the name of what fired. It fades out with the trail.
+
+```toml
+[hint]
+enabled = true
+next = true                  # list what the stroke could still become
+position = "bottom center"   # top, center or bottom, with left, center or right
+margin = 64                  # from the screen edge, px
+font = "sans-serif"          # any installed font family, e.g. "Inter"
+size = 17                    # text size, px; arrows match it
+text = "#f2f2f7"
+glyph = "#9ec4ff"            # the arrows
+background = "#1c1e26"       # "#rrggbbaa" for a see-through background
+opacity = 0.9                # of the whole hint
+padding = 14
+radius = 14
+```
 
 ### Themes
 
@@ -183,6 +222,10 @@ Most answers are in the log: `journalctl --user -u mousewand -f`, or run `mousew
 **My mouse settings stopped applying.** Your compositor now sees one virtual mouse, "mousewand virtual mouse". Apply per-device settings, like a custom acceleration profile, to it instead.
 
 **Keys come out wrong.** `keys` uses US key positions. On another layout, write the key that sits in the same place on a US keyboard.
+
+**No hints.** Check `enabled = true` under `[hint]` in `config.toml`. If they show arrows but no text, the `font` isn't installed: `fc-match "Your Font"` shows what it resolves to.
+
+**"already a [global] gesture".** An app file uses the same stroke, wheel or rocker as a global gesture that shares the main trigger. Change one of them, or give `[global]` a `trigger` of its own.
 
 **Drawing a W shows "command not found".** The settings app isn't installed; see [Settings app](#settings-app).
 
