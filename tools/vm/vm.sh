@@ -5,7 +5,7 @@
 #   tools/vm/vm.sh setup                download the image, make disk and keys
 #   tools/vm/vm.sh start                boot; the first boot provisions the guest
 #   tools/vm/vm.sh test COMPOSITOR      build wisp, run the guest test on sway, kwin,
-#                                       gnome, niri, wayfire, labwc, cosmic, river or x11
+#                                       gnome, niri, labwc, cosmic or x11
 #   tools/vm/vm.sh shot OUT.png         screenshot the guest display
 #   tools/vm/vm.sh ssh [CMD...]         a shell in the guest, as user wisp
 #   tools/vm/vm.sh stop                 power off
@@ -60,11 +60,10 @@ boot() {
 
 provision() {
   echo "provisioning (installs the compositors; takes a few minutes)"
-  "${SSH[@]}" 'sudo pacman -Syu --noconfirm --needed sway kwin gnome-shell niri cosmic-comp wayfire labwc river \
+  "${SSH[@]}" 'sudo pacman -Syu --noconfirm --needed sway kwin gnome-shell niri cosmic-comp labwc \
     xorg-server xorg-xinit xorg-xauth xf86-input-libinput xorg-xinput xfwm4 xterm xdotool picom \
     foot mesa vulkan-swrast xorg-xwayland jq > /tmp/pacman.log 2>&1'
-  put "$ROOT/dist/70-wisp.rules" "$ROOT/dist/wisp-uinput.conf" "$HERE"/guest-*.sh "$HERE/kwin-layout.js" \
-    "$HERE/wayfire.ini" ""
+  put "$ROOT/dist/70-wisp.rules" "$ROOT/dist/wisp-uinput.conf" "$HERE"/guest-*.sh "$HERE/kwin-layout.js" ""
   "${SSH[@]}" 'set -e
     sudo cp 70-wisp.rules /etc/udev/rules.d/
     sudo cp wisp-uinput.conf /etc/modules-load.d/
@@ -102,7 +101,7 @@ start)
   echo up
   ;;
 test)
-  compositor=${2:?sway, kwin, gnome, niri, wayfire, labwc, cosmic, river or x11}
+  compositor=${2:?sway, kwin, gnome, niri, labwc, cosmic or x11}
   (cd "$ROOT" && cargo build -q -p wisp && cargo build -q -p wisp-input --example probe)
   put "$ROOT/target/debug/wisp" "$ROOT/target/debug/examples/probe" bin/
   case "$compositor" in
@@ -122,10 +121,9 @@ test)
         bash gnome-setup.sh window other; bash test.sh wayland-0'
       ;;
     # These run nested in sway: niri and COSMIC refuse llvmpipe on the bare
-    # display, and river 0.5 needs a separate window manager to show windows.
+    # display.
     niri) "${SSH[@]}" 'd=$(bash nested.sh niri); WISP_BACKEND=niri DISPATCH=maximize-column bash test.sh $d' ;;
-    wayfire) "${SSH[@]}" 'd=$(bash nested.sh wayfire); WISP_BACKEND=wayfire bash test.sh $d' ;;
-    labwc | cosmic | river)
+    labwc | cosmic)
       "${SSH[@]}" "d=\$(bash nested.sh $compositor); WISP_BACKEND=toplevel bash test.sh \$d"
       ;;
     # xfwm4 without its compositor, so wisp starts picom. Xorg here applies uinput motion in bursts,

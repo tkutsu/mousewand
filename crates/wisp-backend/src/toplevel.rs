@@ -1,5 +1,5 @@
 //! Any Wayland compositor that lists its windows to clients: niri, labwc,
-//! river, COSMIC and other wlroots compositors.
+//! COSMIC and other wlroots compositors.
 //!
 //! These protocols say which window is focused but not which is under the
 //! cursor, so gestures target the focused window. With focus-follows-mouse
@@ -118,11 +118,6 @@ impl Toplevels {
 /// What to do so the focused window is the one under the cursor.
 fn focus_follows_mouse_note() -> String {
     let desktop = crate::desktop();
-    if desktop.contains("wayfire") {
-        return "Wayfire's IPC is off, so gestures act on the focused window wherever you draw. Add `ipc` and \
-                `ipc-rules` to the `plugins` line of `wayfire.ini` to make them act on the window under the cursor."
-            .into();
-    }
     let (name, how) = if desktop.contains("labwc") {
         (
             "labwc",
