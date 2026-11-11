@@ -267,6 +267,7 @@ impl State {
         let size = (w as f32, h as f32);
         active.pulses.retain(|&(t, _)| now - t < trail::RING_LIFE);
         let mut strips = vec![active.trail.mesh(now, size, &style)];
+        strips.push(active.trail.cap(now, size, &style));
         strips.extend(
             active
                 .pulses

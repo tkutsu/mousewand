@@ -235,6 +235,12 @@ mod tests {
     }
 
     #[test]
+    fn w_is_four_diagonals() {
+        let w = [(3.0, 3.0, 15), (3.0, -3.0, 15), (3.0, 3.0, 15), (3.0, -3.0, 15)];
+        assert_eq!(draw(&w), "3939");
+    }
+
+    #[test]
     fn too_short_is_empty() {
         assert_eq!(draw(&[(1.0, 0.0, 20)]), "");
     }

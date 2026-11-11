@@ -94,6 +94,43 @@ impl Trail {
     }
 }
 
+impl Trail {
+    /// A semicircle that rounds off the head, the same width as the ribbon
+    /// there. Its centre has `edge` 0 and its rim 1, so the shader shades it
+    /// radially and it blends into the ribbon. Call after `mesh`.
+    pub fn cap(&self, now: f32, (width, height): (f32, f32), style: &Style) -> Vec<Vertex> {
+        const SEGMENTS: usize = 12;
+        let n = self.points.len();
+        if n < 2 {
+            return Vec::new();
+        }
+        let (head, prev) = (self.points[n - 1], self.points[n - 2]);
+        let forward = (head.y - prev.y).atan2(head.x - prev.x);
+        let life = 1.0 - (now - head.t) / style.life;
+        let radius = style.width / 2.0 * life.powf(0.7);
+        let clip = |x: f32, y: f32| [x / width * 2.0 - 1.0, 1.0 - y / height * 2.0];
+        let vertex = |x, y, edge| Vertex {
+            pos: clip(x, y),
+            edge,
+            alpha: life * style.fade,
+            color: style.color,
+            glow: style.glow,
+        };
+        // A strip alternating rim and centre: every other triangle is
+        // degenerate, the rest fan out from the head.
+        (0..=SEGMENTS)
+            .flat_map(|i| {
+                let angle = forward - std::f32::consts::FRAC_PI_2 + std::f32::consts::PI * i as f32 / SEGMENTS as f32;
+                let (sin, cos) = angle.sin_cos();
+                [
+                    vertex(head.x + cos * radius, head.y + sin * radius, 1.0),
+                    vertex(head.x, head.y, 0.0),
+                ]
+            })
+            .collect()
+    }
+}
+
 /// A ring `age` seconds into its pulse: it grows from the cursor and fades.
 pub fn ring((cx, cy): (f32, f32), age: f32, (width, height): (f32, f32), style: &Style) -> Vec<Vertex> {
     const SEGMENTS: usize = 40;
