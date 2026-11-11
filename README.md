@@ -230,11 +230,11 @@ cargo install --path crates/mousewand-settings
 
 ## Troubleshooting
 
-Most answers are in the log: `journalctl --user -u mousewand -f`, or run `mousewand` in a terminal. For more detail, start it with `RUST_LOG=mousewand=debug`.
+Most answers are in the log: `journalctl --user -u mousewand -f`, or stop it and run `mousewand` in a terminal. Only one runs at a time, so a second one says `already running` and quits. For more detail, start it with `RUST_LOG=mousewand=debug`.
 
 **Nothing happens at all.** Check that it's running: `systemctl --user status mousewand`. The log should say `grabbed` and your mouse's name. If it doesn't, or it asks whether `/dev/uinput` is writable, step 2 of [Install](#install) hasn't taken effect yet: log out and back in. With several mice, `devices` in `config.toml` may be leaving yours out.
 
-**It doesn't start with my desktop.** The service starts with `graphical-session.target`, which some setups never reach. Start `mousewand` from your compositor's autostart instead, e.g. `exec-once` in Hyprland.
+**It doesn't start with my desktop.** The service starts with `graphical-session.target`, which some setups never reach. Start `mousewand` from your compositor's autostart instead, e.g. `exec-once` in Hyprland. Doing both is harmless: whichever starts second quits.
 
 **A stroke does nothing.** The log shows what mousewand saw, e.g. `DUDU: no gesture`. Draw more slowly or more clearly, or lower `min_segment`. With debug logging, it also shows the window class it matched; that's the name for `apps/`.
 

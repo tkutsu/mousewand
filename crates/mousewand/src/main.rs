@@ -3,6 +3,7 @@
 
 mod config;
 mod daemon;
+mod instance;
 mod notes;
 
 use std::sync::mpsc;
@@ -29,6 +30,12 @@ fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(filter))
         .format_timestamp_millis()
         .init();
+
+    // Exits cleanly, so a second start from autostart or systemd's
+    // Restart=on-failure doesn't count as a failure.
+    let Some(_instance) = instance::claim()? else {
+        return Ok(());
+    };
 
     let dir = config::dir()?;
     let config = config::load(&dir).with_context(|| format!("loading {}", dir.display()))?;
