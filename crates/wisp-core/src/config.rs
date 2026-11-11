@@ -340,8 +340,9 @@ impl Config {
     }
 }
 
-/// The stroke that opens the settings app on the window under the cursor.
-pub const SETTINGS_STROKE: &str = "UDU";
+/// The stroke that opens the settings app on the window under the cursor:
+/// a W, ↘↗↘↗.
+pub const SETTINGS_STROKE: &str = "3939";
 
 /// Opens `wisp-settings`, which reads the window class from `WISP_CLASS`.
 fn settings_gesture() -> Gesture {
@@ -515,10 +516,10 @@ mod tests {
         let opens_settings = |c: &Config, class: &str| {
             c.gestures_for(class)
                 .iter()
-                .any(|g| g.input == stroke("UDU") && g.action == Action::Command("wisp-settings".into()))
+                .any(|g| g.input == stroke("3939") && g.action == Action::Command("wisp-settings".into()))
         };
         assert!(opens_settings(&config(), "kitty"));
-        let taken = "[[gesture]]\nstroke = \"UDU\"\naction = { keys = \"a\" }";
+        let taken = "[[gesture]]\nstroke = \"3939\"\naction = { keys = \"a\" }";
         let c = Config::parse("", &[("kitty".into(), taken.into())]).unwrap();
         assert!(!opens_settings(&c, "kitty"));
         assert!(opens_settings(&c, "firefox"));

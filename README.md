@@ -92,7 +92,7 @@ App gestures override global ones with the same input. Saving a file reloads it;
 
 ## Settings app
 
-Draw ↑↓↑ (`UDU`) over any window to open `wisp-settings` on that window's app: its gestures, presets for common apps, and a Record button that captures a shortcut as you press it. The "Everywhere" tab holds the trigger, theme and global gestures. A gesture of your own on `UDU` replaces this one.
+Draw a W (↘↗↘↗, written `3939`) over any window to open `wisp-settings` on that window's app: its gestures, presets for common apps, and a Record button that captures a shortcut as you press it. The "Everywhere" tab holds the trigger, theme and global gestures. A gesture of your own on `3939` replaces this one.
 
 The config files stay the source of truth: the app edits only the settings and gesture lists, keeps your comments, and refuses to save anything the daemon would reject. It's a Tauri app, built separately:
 
