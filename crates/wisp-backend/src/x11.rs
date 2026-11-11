@@ -62,6 +62,15 @@ impl X11 {
         Ok(None)
     }
 
+    /// The window the window manager reports as active.
+    fn active(&self) -> anyhow::Result<Option<XWindow>> {
+        let reply = self
+            .conn
+            .get_property(false, self.root, self.net_active_window, AtomEnum::WINDOW, 0, 1)?
+            .reply()?;
+        Ok(reply.value32().and_then(|mut v| v.next()).filter(|&w| w != x11rb::NONE))
+    }
+
     fn title(&self, window: XWindow) -> anyhow::Result<String> {
         let utf8 = self
             .conn
@@ -106,9 +115,14 @@ impl Backend for X11 {
         Ok(Target { window, monitor: None })
     }
 
-    /// Asks the window manager to activate it, the EWMH way.
+    /// Asks the window manager to activate it, the EWMH way, and waits until
+    /// it has: the request is asynchronous, and keys sent before the switch
+    /// would reach the window that had focus.
     fn focus(&self, window: &Window) -> anyhow::Result<()> {
         let id: XWindow = window.id.parse()?;
+        if self.active()? == Some(id) {
+            return Ok(());
+        }
         // Source 2: a pager or similar tool acting for the user.
         let event = ClientMessageEvent::new(32, id, self.net_active_window, [2, x11rb::CURRENT_TIME, 0, 0, 0]);
         self.conn.send_event(
@@ -118,6 +132,13 @@ impl Backend for X11 {
             event,
         )?;
         self.conn.flush()?;
+        for _ in 0..50 {
+            if self.active()? == Some(id) {
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        log::warn!("the window manager didn't focus {:?} in time", window.class);
         Ok(())
     }
 
