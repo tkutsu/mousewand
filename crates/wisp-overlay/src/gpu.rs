@@ -68,28 +68,45 @@ impl Gpu {
         let window = NonNull::new(surface.id().as_ptr().cast()).context("no Wayland surface")?;
         // Safety: the layer surface outlives this wgpu surface; `Active`
         // declares `target` before `layer`, so it's dropped first.
+        unsafe {
+            self.raw_target(
+                RawDisplayHandle::Wayland(WaylandDisplayHandle::new(display)),
+                RawWindowHandle::Wayland(WaylandWindowHandle::new(window)),
+            )
+        }
+    }
+
+    /// # Safety
+    /// The display and window must outlive the returned target.
+    pub unsafe fn raw_target(&self, display: RawDisplayHandle, window: RawWindowHandle) -> anyhow::Result<Target> {
         let surface = unsafe {
             self.instance
                 .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
-                    raw_display_handle: Some(RawDisplayHandle::Wayland(WaylandDisplayHandle::new(display))),
-                    raw_window_handle: RawWindowHandle::Wayland(WaylandWindowHandle::new(window)),
+                    raw_display_handle: Some(display),
+                    raw_window_handle: window,
                 })
         }?;
         Ok(Target { surface, config: None })
     }
 
     /// Sizes the surface in physical pixels. Fails rather than fall back to
-    /// an opaque surface, which would black out the monitor.
-    pub fn configure(&self, target: &mut Target, width: u32, height: u32) -> anyhow::Result<()> {
+    /// an opaque surface, which would black out the monitor. `inherit` also
+    /// accepts the window's own alpha, which on X11 means the compositor
+    /// reads a 32-bit window's pixels as premultiplied.
+    pub fn configure(&self, target: &mut Target, width: u32, height: u32, inherit: bool) -> anyhow::Result<()> {
         let caps = target.surface.get_capabilities(&self.adapter);
-        if !caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::PreMultiplied) {
-            bail!("the GPU can't make transparent surfaces here ({:?})", caps.alpha_modes);
+        let mut accepted = vec![wgpu::CompositeAlphaMode::PreMultiplied];
+        if inherit {
+            accepted.push(wgpu::CompositeAlphaMode::Inherit);
         }
+        let Some(&alpha_mode) = accepted.iter().find(|mode| caps.alpha_modes.contains(mode)) else {
+            bail!("the GPU can't make transparent surfaces here ({:?})", caps.alpha_modes);
+        };
         let mut config = target
             .surface
             .get_default_config(&self.adapter, width, height)
             .context("surface isn't supported by the adapter")?;
-        config.alpha_mode = wgpu::CompositeAlphaMode::PreMultiplied;
+        config.alpha_mode = alpha_mode;
         config.present_mode = wgpu::PresentMode::Fifo;
         target.surface.configure(&self.device, &config);
         target.config = Some(config);

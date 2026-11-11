@@ -2,20 +2,26 @@
 
 Mouse gestures for Linux. Hold a mouse button, draw a stroke, and an action fires. Which action depends on the window under the cursor where the stroke started: "left" can go back in Firefox and switch tabs in kitty.
 
-Status: early. Works on Hyprland, sway, KWin (Plasma 6) and GNOME.
+Status: early. Works on Hyprland, KWin, GNOME, sway, niri, Wayfire, COSMIC, labwc, river and X11 desktops.
 
 ## Compositors
 
-wisp detects the compositor on its own. Set `WISP_BACKEND` to `hyprland`, `sway`, `kwin` or `gnome` to choose.
+wisp detects the compositor on its own. To choose, set `WISP_BACKEND` to `hyprland`, `sway`, `niri`, `wayfire`, `kwin`, `gnome`, `x11`, or `toplevel` (any compositor below that lists its windows).
 
-| | Window under the cursor | Trail | `dispatch` runs |
+| | Gestures target | Trail | `dispatch` runs |
 |---|---|---|---|
-| Hyprland | ✓ | ✓ | a Hyprland dispatcher |
-| sway | the focused window; with sway's default `focus_follows_mouse` that's the one under the cursor | ✓ | a sway command, e.g. `"fullscreen toggle"` |
-| KWin | ✓, through short KWin scripts over D-Bus | ✓ | a KWin shortcut by name, e.g. `"Window Maximize"` |
-| GNOME | ✓, through wisp's Shell extension | ✓, drawn by the extension | nothing; use `keys` or `command` |
+| Hyprland | the window under the cursor | ✓ | a Hyprland dispatcher |
+| KWin (Plasma 6) | the window under the cursor, through short KWin scripts over D-Bus | ✓ | a KWin shortcut by name, e.g. `"Window Maximize"` |
+| GNOME | the window under the cursor, through wisp's Shell extension | ✓, drawn by the extension | nothing; use `keys` or `command` |
+| Wayfire | the window under the cursor; needs the `ipc` and `ipc-rules` plugins | ✓ | a Wayfire IPC call, `"method {json}"` |
+| X11 (Xfce, Cinnamon, MATE, i3, …) | the window under the cursor | ✓ with a compositing manager | nothing |
+| sway | the focused window | ✓ | a sway command, e.g. `"fullscreen toggle"` |
+| niri | the focused window | ✓ | a niri action, e.g. `"maximize-column"` |
+| COSMIC, labwc, river | the focused window | ✓ | nothing |
 
-Keys and dispatchers go to the window the gesture was drawn over: wisp focuses it first.
+"The focused window" means these compositors don't tell other programs which window is under the cursor. With focus-follows-mouse, the focused window is the one under the cursor anyway: sway has it on by default; in niri add `focus-follows-mouse` to the `input` section. Without it, gestures act on whichever window has focus, wherever you draw.
+
+Keys and dispatchers go to the window the gesture was drawn over: wisp focuses it first. That window is fixed when the gesture starts, so it doesn't matter where the stroke ends.
 
 GNOME has no layer-shell, so its trail is drawn inside GNOME Shell by the extension, with Cairo instead of the GPU shader. Themes apply the same way; the glow is a close approximation.
 

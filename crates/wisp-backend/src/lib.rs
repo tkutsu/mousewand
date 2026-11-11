@@ -8,6 +8,7 @@ mod kwin;
 mod sway;
 mod toplevel;
 mod wayfire;
+mod x11;
 
 pub use gnome::Gnome;
 pub use hyprland::Hyprland;
@@ -15,6 +16,7 @@ pub use kwin::KWin;
 pub use sway::Sway;
 pub use toplevel::{Flavor, Toplevels};
 pub use wayfire::Wayfire;
+pub use x11::X11;
 
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct Window {
@@ -64,10 +66,15 @@ pub fn detect() -> anyhow::Result<Box<dyn Backend>> {
         }
         Some("toplevel") => return Ok(Box::new(Toplevels::connect(Flavor::Other)?)),
         Some("wayfire") => return Ok(Box::new(Wayfire::connect()?)),
-        Some(other) => {
-            anyhow::bail!("unknown WISP_BACKEND {other:?}: use hyprland, sway, niri, wayfire, kwin, gnome or toplevel")
-        }
+        Some("x11") => return Ok(Box::new(X11::connect()?)),
+        Some(other) => anyhow::bail!(
+            "unknown WISP_BACKEND {other:?}: use hyprland, sway, niri, wayfire, kwin, gnome, toplevel or x11"
+        ),
         None => {}
+    }
+    // An X11 session: an X display and no Wayland one.
+    if std::env::var_os("WAYLAND_DISPLAY").is_none() && std::env::var_os("DISPLAY").is_some() {
+        return Ok(Box::new(X11::connect()?));
     }
     if hyprland::find_socket().is_ok_and(|s| answers(&s)) {
         return Ok(Box::new(Hyprland::connect()?));

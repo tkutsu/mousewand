@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# A throwaway Arch VM for testing wisp on sway, KWin and GNOME, end to end:
+# A throwaway Arch VM for testing wisp on compositors other than the host's, end to end:
 # a fake mouse inside the guest, wisp's grab, the compositor's libinput.
 #
 #   tools/vm/vm.sh setup                download the image, make disk and keys
 #   tools/vm/vm.sh start                boot; the first boot provisions the guest
-#   tools/vm/vm.sh test sway|kwin|gnome build wisp, run the guest test there
+#   tools/vm/vm.sh test COMPOSITOR      build wisp, run the guest test on sway, kwin,
+#                                       gnome, niri, wayfire, labwc, cosmic, river or x11
 #   tools/vm/vm.sh shot OUT.png         screenshot the guest display
 #   tools/vm/vm.sh ssh [CMD...]         a shell in the guest, as user wisp
 #   tools/vm/vm.sh stop                 power off
@@ -58,9 +59,12 @@ boot() {
 }
 
 provision() {
-  echo "provisioning (installs sway, KWin and GNOME; takes a few minutes)"
-  "${SSH[@]}" 'sudo pacman -Syu --noconfirm --needed sway kwin gnome-shell foot mesa vulkan-swrast xorg-xwayland jq > /tmp/pacman.log 2>&1'
-  put "$ROOT/dist/70-wisp.rules" "$ROOT/dist/wisp-uinput.conf" "$HERE"/guest-*.sh "$HERE/kwin-layout.js" ""
+  echo "provisioning (installs the compositors; takes a few minutes)"
+  "${SSH[@]}" 'sudo pacman -Syu --noconfirm --needed sway kwin gnome-shell niri cosmic-comp wayfire labwc river \
+    xorg-server xorg-xinit xorg-xauth xf86-input-libinput xorg-xinput xfwm4 xterm xdotool \
+    foot mesa vulkan-swrast xorg-xwayland jq > /tmp/pacman.log 2>&1'
+  put "$ROOT/dist/70-wisp.rules" "$ROOT/dist/wisp-uinput.conf" "$HERE"/guest-*.sh "$HERE/kwin-layout.js" \
+    "$HERE/wayfire.ini" ""
   "${SSH[@]}" 'set -e
     sudo cp 70-wisp.rules /etc/udev/rules.d/
     sudo cp wisp-uinput.conf /etc/modules-load.d/
@@ -98,13 +102,13 @@ start)
   echo up
   ;;
 test)
-  compositor=${2:?sway, kwin or gnome}
+  compositor=${2:?sway, kwin, gnome, niri, wayfire, labwc, cosmic, river or x11}
   (cd "$ROOT" && cargo build -q -p wisp && cargo build -q -p wisp-input --example probe)
   put "$ROOT/target/debug/wisp" "$ROOT/target/debug/examples/probe" bin/
   put "$ROOT/dist/gnome-extension/wisp@tkutsu.github.io/"* ext/
   case "$compositor" in
     sway)
-      "${SSH[@]}" 'echo sway > compositor; pkill -x kwin_wayland; pkill -x gnome-shell; pkill -x sway; sleep 6
+      "${SSH[@]}" 'bash switch.sh sway > /dev/null
         S=$(ls /run/user/1000/sway-ipc.*.sock)
         SWAYSOCK=$S swaymsg -q "exec foot"; sleep 1; SWAYSOCK=$S swaymsg -q "exec foot --app-id=other"; sleep 2
         DISPATCH="fullscreen toggle" bash test.sh wayland-1'
@@ -116,6 +120,16 @@ test)
       "${SSH[@]}" 'bash gnome-setup.sh restart; bash gnome-setup.sh window foot; bash test.sh wayland-0
         bash gnome-setup.sh window other; bash test.sh wayland-0'
       ;;
+    # These run nested in sway: niri and COSMIC refuse llvmpipe on the bare
+    # display, and river 0.5 needs a separate window manager to show windows.
+    niri) "${SSH[@]}" 'd=$(bash nested.sh niri); WISP_BACKEND=niri DISPATCH=maximize-column bash test.sh $d' ;;
+    wayfire) "${SSH[@]}" 'd=$(bash nested.sh wayfire); WISP_BACKEND=wayfire bash test.sh $d' ;;
+    labwc | cosmic | river)
+      "${SSH[@]}" "d=\$(bash nested.sh $compositor); WISP_BACKEND=toplevel bash test.sh \$d"
+      ;;
+    # xfwm4 with its compositor. Xorg here applies uinput motion in bursts,
+    # so this checks window lookup and actions; the trail needs smooth motion.
+    x11) "${SSH[@]}" 'bash x11-setup.sh; bash test.sh :0' ;;
     *) echo "unknown compositor $compositor" >&2; exit 1 ;;
   esac
   ;;
