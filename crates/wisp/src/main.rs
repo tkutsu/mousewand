@@ -3,6 +3,7 @@
 
 mod config;
 mod daemon;
+mod notes;
 
 use std::sync::mpsc;
 use std::thread;
@@ -32,7 +33,9 @@ fn main() -> anyhow::Result<()> {
     let dir = config::dir()?;
     let config = config::load(&dir).with_context(|| format!("loading {}", dir.display()))?;
     log::info!("config from {}", dir.display());
-    let backend = wisp_backend::detect()?;
+    let mut backend = wisp_backend::detect()?;
+    // Before the overlay: on X11 it can need the compositor this starts.
+    notes::show(&backend.setup());
 
     let (tx, rx) = mpsc::channel();
     let gestures = tx.clone();

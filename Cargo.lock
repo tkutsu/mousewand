@@ -5614,6 +5614,7 @@ dependencies = [
  "wisp-core",
  "wisp-input",
  "wisp-overlay",
+ "zbus",
 ]
 
 [[package]]

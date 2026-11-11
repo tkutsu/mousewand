@@ -5,6 +5,7 @@ mod cosmic;
 mod gnome;
 mod hyprland;
 mod kwin;
+mod niri;
 mod sway;
 mod toplevel;
 mod wayfire;
@@ -47,6 +48,26 @@ pub trait Backend: Send {
     /// layer-shell. `None` means wisp's own overlay.
     fn trail(&self) -> Option<Box<dyn wisp_core::Trail>> {
         None
+    }
+
+    /// Sets up what this compositor needs, where wisp can do it itself, and
+    /// returns notes on what the user should know or still do: one
+    /// sentence or a few each, with code in `backticks`. Runs once, at start.
+    fn setup(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+/// `$XDG_CURRENT_DESKTOP`, lowercased, e.g. "labwc:wlroots".
+fn desktop() -> String {
+    std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_lowercase()
+}
+
+/// `$XDG_<KIND>_HOME`, else `~/<fallback>`.
+fn xdg_home(kind: &str, fallback: &str) -> Option<std::path::PathBuf> {
+    match std::env::var_os(format!("XDG_{kind}_HOME")) {
+        Some(dir) => Some(dir.into()),
+        None => Some(std::path::PathBuf::from(std::env::var_os("HOME")?).join(fallback)),
     }
 }
 

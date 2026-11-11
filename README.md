@@ -19,19 +19,21 @@ wisp detects the compositor on its own. To choose, set `WISP_BACKEND` to `hyprla
 | niri | the focused window | ✓ | a niri action, e.g. `"maximize-column"` |
 | COSMIC, labwc, river | the focused window | ✓ | nothing |
 
-"The focused window" means these compositors don't tell other programs which window is under the cursor. With focus-follows-mouse, the focused window is the one under the cursor anyway: sway has it on by default; in niri add `focus-follows-mouse` to the `input` section. Without it, gestures act on whichever window has focus, wherever you draw.
+"The focused window" means these compositors don't tell other programs which window is under the cursor. With focus-follows-mouse, the focused window is the one under the cursor anyway: sway has it on by default. Without it, gestures act on whichever window has focus, wherever you draw.
 
 Keys and dispatchers go to the window the gesture was drawn over: wisp focuses it first. That window is fixed when the gesture starts, so it doesn't matter where the stroke ends.
 
+### Setup
+
+wisp sets up what it can on its own when it starts:
+
+- **GNOME**: installs its Shell extension in `~/.local/share/gnome-shell/extensions` and enables it, and updates it when wisp updates. GNOME starts new extensions only at login, so log out and back in once; until then gestures work, but only the global ones, and without the trail.
+- **niri**: adds `focus-follows-mouse` to the `input` section of `config.kdl`, after `niri validate` accepts the change, and keeps the old file as `config.kdl.wisp-backup`. It does this once: remove the setting and wisp leaves it out.
+- **X11**: the trail needs a compositing manager. If none is running, wisp starts picom (without any picom config, so no shadows or fades) and stops it when it stops.
+
+What it can't do, such as turning on focus-follows-mouse in labwc or COSMIC, or logging you out, it tells you: the settings app opens on a Setup tab, or, without the app, a desktop notification appears. Each note shows once, and again only when there's a new one, such as after switching to another compositor. The notes for the current desktop stay in the app's Setup tab and in `~/.local/state/wisp/notes`.
+
 GNOME has no layer-shell, so its trail is drawn inside GNOME Shell by the extension, with Cairo instead of the GPU shader. Themes apply the same way; the glow is a close approximation.
-
-GNOME needs the extension in `dist/gnome-extension`:
-
-```fish
-cp -r dist/gnome-extension/wisp@tkutsu.github.io ~/.local/share/gnome-shell/extensions/
-# log out and back in, then:
-gnome-extensions enable wisp@tkutsu.github.io
-```
 
 ## How it behaves
 
@@ -140,7 +142,7 @@ The trail's surface exists only while you draw: plain clicks never create one, s
 
 `cargo run -p wisp-input --example probe` tests the input path against a fake mouse without touching your desktop.
 
-`tools/vm/vm.sh` tests the other compositors in a QEMU VM, end to end: a fake mouse inside the guest, wisp's grab, and sway, KWin or GNOME on top. `vm.sh setup`, `vm.sh start`, then `vm.sh test sway` (or `kwin`, `gnome`).
+`tools/vm/vm.sh` tests the other compositors in a QEMU VM, end to end: a fake mouse inside the guest, wisp's grab, and the compositor on top. `vm.sh setup`, `vm.sh start`, then `vm.sh test sway` (or `kwin`, `gnome`, `niri`, `wayfire`, `labwc`, `cosmic`, `river`, `x11`).
 
 ## License
 

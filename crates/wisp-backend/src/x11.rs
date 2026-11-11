@@ -1,6 +1,9 @@
 //! X11 desktops (Xfce, Cinnamon, MATE, i3, …), through the X server and
 //! the window manager's EWMH support.
 
+use std::process::{Child, Command, Stdio};
+use std::time::Duration;
+
 use anyhow::{Context, bail};
 use x11rb::connection::Connection;
 use x11rb::properties::WmClass;
@@ -16,6 +19,10 @@ pub struct X11 {
     net_wm_name: Atom,
     utf8_string: Atom,
     net_active_window: Atom,
+    /// `_NET_WM_CM_S<screen>`, owned by the running compositing manager.
+    compositor: Atom,
+    /// picom, if wisp started it.
+    picom: Option<Child>,
 }
 
 impl X11 {
@@ -23,11 +30,12 @@ impl X11 {
         let (conn, screen) = x11rb::connect(None).context("no X display")?;
         let root = conn.setup().roots[screen].root;
         let atom = |name: &str| -> anyhow::Result<Atom> { Ok(conn.intern_atom(false, name.as_bytes())?.reply()?.atom) };
-        let (wm_state, net_wm_name, utf8_string, net_active_window) = (
+        let (wm_state, net_wm_name, utf8_string, net_active_window, compositor) = (
             atom("WM_STATE")?,
             atom("_NET_WM_NAME")?,
             atom("UTF8_STRING")?,
             atom("_NET_ACTIVE_WINDOW")?,
+            atom(&format!("_NET_WM_CM_S{screen}"))?,
         );
         log::info!("using X11");
         Ok(X11 {
@@ -37,7 +45,37 @@ impl X11 {
             net_wm_name,
             utf8_string,
             net_active_window,
+            compositor,
+            picom: None,
         })
+    }
+
+    fn composited(&self) -> anyhow::Result<bool> {
+        Ok(self.conn.get_selection_owner(self.compositor)?.reply()?.owner != x11rb::NONE)
+    }
+
+    /// Starts picom and waits for it to take over compositing. Without a
+    /// config, so the desktop looks as before: distro configs add shadows
+    /// and fades to every window, the trail's included. picom 13 wants a
+    /// backend named; xrender needs no GL.
+    fn start_picom(&mut self) -> anyhow::Result<()> {
+        let mut child = Command::new("picom")
+            .args(["--config", "/dev/null", "--backend", "xrender"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+        for _ in 0..60 {
+            if self.composited()? {
+                log::info!("started picom for the trail");
+                self.picom = Some(child);
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        bail!("picom started, but didn't take over compositing")
     }
 
     /// The application window inside a window manager's frame: the one
@@ -89,6 +127,36 @@ impl X11 {
 }
 
 impl Backend for X11 {
+    /// The trail needs a compositing manager to be see-through. Without
+    /// one, wisp runs picom while it runs.
+    fn setup(&mut self) -> Vec<String> {
+        if self.composited().unwrap_or(true) {
+            return Vec::new();
+        }
+        match self.start_picom() {
+            Ok(()) => vec![
+                "No compositing manager was running, so wisp started picom to draw the trail, and stops it when \
+                 wisp stops. If your window manager composites by itself (Xfce: Window Manager Tweaks, \
+                 Compositor), turn that on, and wisp leaves it alone."
+                    .into(),
+            ],
+            Err(e)
+                if e.downcast_ref::<std::io::Error>()
+                    .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
+            {
+                vec![
+                    "The trail needs a compositing manager, and none is running. Install picom, which wisp starts \
+                     when it's needed, or turn on your window manager's compositing (Xfce: Window Manager \
+                     Tweaks, Compositor)."
+                        .into(),
+                ]
+            }
+            Err(e) => vec![format!(
+                "The trail needs a compositing manager, and none is running: {e:#}."
+            )],
+        }
+    }
+
     fn pointer_target(&self) -> anyhow::Result<Target> {
         let pointer = self.conn.query_pointer(self.root)?.reply()?;
         // `child` is the top-level window under the pointer, usually a frame.
@@ -144,5 +212,14 @@ impl Backend for X11 {
 
     fn dispatch(&self, _: &str) -> anyhow::Result<()> {
         bail!("X11 has no dispatchers; use a keys or command action")
+    }
+}
+
+impl Drop for X11 {
+    fn drop(&mut self) {
+        if let Some(mut picom) = self.picom.take() {
+            let _ = picom.kill();
+            let _ = picom.wait();
+        }
     }
 }

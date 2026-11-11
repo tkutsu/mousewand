@@ -61,7 +61,7 @@ boot() {
 provision() {
   echo "provisioning (installs the compositors; takes a few minutes)"
   "${SSH[@]}" 'sudo pacman -Syu --noconfirm --needed sway kwin gnome-shell niri cosmic-comp wayfire labwc river \
-    xorg-server xorg-xinit xorg-xauth xf86-input-libinput xorg-xinput xfwm4 xterm xdotool \
+    xorg-server xorg-xinit xorg-xauth xf86-input-libinput xorg-xinput xfwm4 xterm xdotool picom \
     foot mesa vulkan-swrast xorg-xwayland jq > /tmp/pacman.log 2>&1'
   put "$ROOT/dist/70-wisp.rules" "$ROOT/dist/wisp-uinput.conf" "$HERE"/guest-*.sh "$HERE/kwin-layout.js" \
     "$HERE/wayfire.ini" ""
@@ -105,19 +105,20 @@ test)
   compositor=${2:?sway, kwin, gnome, niri, wayfire, labwc, cosmic, river or x11}
   (cd "$ROOT" && cargo build -q -p wisp && cargo build -q -p wisp-input --example probe)
   put "$ROOT/target/debug/wisp" "$ROOT/target/debug/examples/probe" bin/
-  put "$ROOT/dist/gnome-extension/wisp@tkutsu.github.io/"* ext/
   case "$compositor" in
     sway)
       "${SSH[@]}" 'bash switch.sh sway > /dev/null
-        S=$(ls /run/user/1000/sway-ipc.*.sock)
+        S=$(ls -t /run/user/1000/sway-ipc.*.sock | head -1)
         SWAYSOCK=$S swaymsg -q "exec foot"; sleep 1; SWAYSOCK=$S swaymsg -q "exec foot --app-id=other"; sleep 2
         DISPATCH="fullscreen toggle" bash test.sh wayland-1'
       ;;
     kwin)
       "${SSH[@]}" 'bash kwin-setup.sh; DISPATCH="Window Maximize" bash test.sh wayland-0'
       ;;
+    # wisp installs its extension, then a Shell restart stands in for logging in again.
     gnome)
-      "${SSH[@]}" 'bash gnome-setup.sh restart; bash gnome-setup.sh window foot; bash test.sh wayland-0
+      "${SSH[@]}" 'bash gnome-setup.sh restart; bash gnome-setup.sh install; bash gnome-setup.sh restart
+        bash gnome-setup.sh window foot; bash test.sh wayland-0
         bash gnome-setup.sh window other; bash test.sh wayland-0'
       ;;
     # These run nested in sway: niri and COSMIC refuse llvmpipe on the bare
@@ -127,7 +128,7 @@ test)
     labwc | cosmic | river)
       "${SSH[@]}" "d=\$(bash nested.sh $compositor); WISP_BACKEND=toplevel bash test.sh \$d"
       ;;
-    # xfwm4 with its compositor. Xorg here applies uinput motion in bursts,
+    # xfwm4 without its compositor, so wisp starts picom. Xorg here applies uinput motion in bursts,
     # so this checks window lookup and actions; the trail needs smooth motion.
     x11) "${SSH[@]}" 'bash x11-setup.sh; bash test.sh :0' ;;
     *) echo "unknown compositor $compositor" >&2; exit 1 ;;

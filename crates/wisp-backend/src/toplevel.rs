@@ -115,7 +115,44 @@ impl Toplevels {
     }
 }
 
+/// What to do so the focused window is the one under the cursor.
+fn focus_follows_mouse_note() -> String {
+    let desktop = crate::desktop();
+    if desktop.contains("wayfire") {
+        return "Wayfire's IPC is off, so gestures act on the focused window wherever you draw. Add `ipc` and \
+                `ipc-rules` to the `plugins` line of `wayfire.ini` to make them act on the window under the cursor."
+            .into();
+    }
+    let (name, how) = if desktop.contains("labwc") {
+        (
+            "labwc",
+            "add `<focus><followMouse>yes</followMouse></focus>` to `~/.config/labwc/rc.xml`",
+        )
+    } else if desktop.contains("cosmic") {
+        (
+            "COSMIC",
+            "turn on focus follows cursor in COSMIC Settings, under window management",
+        )
+    } else {
+        (
+            "This compositor",
+            "turn on its focus-follows-mouse setting, if it has one",
+        )
+    };
+    format!(
+        "{name} only tells other programs which window is focused, so gestures act on that window wherever you \
+         draw. To make it the window under the cursor, {how}."
+    )
+}
+
 impl Backend for Toplevels {
+    fn setup(&mut self) -> Vec<String> {
+        match self.flavor {
+            Flavor::Niri(_) => crate::niri::setup(),
+            Flavor::Other => vec![focus_follows_mouse_note()],
+        }
+    }
+
     fn pointer_target(&self) -> anyhow::Result<Target> {
         let shared = self.shared.lock().unwrap();
         let window = shared.windows.iter().find(|(_, e)| e.activated).map(|(id, e)| Window {

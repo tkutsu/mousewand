@@ -2,26 +2,28 @@ import { useEffect, useState, type ReactNode } from "react";
 import * as api from "./api";
 import GestureList from "./GestureList";
 
-type Tab = "global" | "app";
+type Tab = "global" | "app" | "setup";
 
 export default function App() {
   const [state, setState] = useState<api.State | null>(null);
   const [settings, setSettings] = useState<api.Settings | null>(null);
   const [global, setGlobal] = useState<api.Gesture[]>([]);
   const [app, setApp] = useState<api.App | null>(null);
+  const [notes, setNotes] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>("global");
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
-    api
-      .load()
-      .then((s) => {
+    Promise.all([api.load(), api.notes()])
+      .then(([s, n]) => {
         setState(s);
         setSettings(s.settings);
         setGlobal(s.global);
         setApp(s.app);
-        if (s.app) setTab("app");
+        setNotes(n.notes);
+        if (n.open && n.notes.length > 0) setTab("setup");
+        else if (s.app) setTab("app");
       })
       .catch((e) => setStatus({ ok: false, text: String(e) }));
   }, []);
@@ -62,6 +64,11 @@ export default function App() {
               {app.classes[0]}
             </TabButton>
           )}
+          {notes.length > 0 && (
+            <TabButton active={tab === "setup"} onClick={() => setTab("setup")}>
+              Setup
+            </TabButton>
+          )}
         </nav>
         <span className="ml-auto truncate pb-3 font-mono text-xs text-zinc-400" title={state.dir}>
           {state.dir}
@@ -69,7 +76,9 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-y-auto px-6 py-5">
-        {tab === "global" ? (
+        {tab === "setup" ? (
+          <SetupTab notes={notes} />
+        ) : tab === "global" ? (
           <div className="flex flex-col gap-6">
             <Section title="Settings">
               <SettingsForm settings={settings} themes={state.themes} onChange={edit(setSettings)} />
@@ -92,6 +101,32 @@ export default function App() {
         </button>
       </footer>
     </div>
+  );
+}
+
+function SetupTab({ notes }: { notes: string[] }) {
+  return (
+    <Section title="On this desktop" hint="wisp shows these once, and again when something new comes up.">
+      <ul className="flex max-w-2xl flex-col gap-3">
+        {notes.map((note) => (
+          <li
+            key={note}
+            className="rounded-lg border border-zinc-200 px-4 py-3 text-sm leading-relaxed dark:border-zinc-800"
+          >
+            {/* `code` in backticks: odd parts are code. */}
+            {note.split("`").map((part, i) =>
+              i % 2 ? (
+                <code key={i} className="rounded bg-zinc-100 px-1 font-mono text-[0.85em] dark:bg-zinc-800">
+                  {part}
+                </code>
+              ) : (
+                part
+              ),
+            )}
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 
