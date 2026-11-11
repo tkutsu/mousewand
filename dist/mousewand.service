@@ -1,0 +1,12 @@
+[Unit]
+Description=mousewand mouse gestures
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.cargo/bin/mousewand
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

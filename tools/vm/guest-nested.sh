@@ -7,10 +7,10 @@ export XDG_RUNTIME_DIR=/run/user/1000
 bash ~/switch.sh sway > /dev/null
 S=$(ls -t /run/user/1000/sway-ipc.*.sock | head -1)
 case "$1" in
-  # wisp turns on focus-follows-mouse itself; start from niri's default.
+  # mousewand turns on focus-follows-mouse itself; start from niri's default.
   niri)
-    cp ~/.config/niri/config.kdl.wisp-backup ~/.config/niri/config.kdl 2> /dev/null &&
-      rm ~/.config/niri/config.kdl.wisp-backup
+    cp ~/.config/niri/config.kdl.mousewand-backup ~/.config/niri/config.kdl 2> /dev/null &&
+      rm ~/.config/niri/config.kdl.mousewand-backup
     cmd=niri
     ;;
   cosmic) cmd=cosmic-comp ;;

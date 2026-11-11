@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# A throwaway Arch VM for testing wisp on compositors other than the host's, end to end:
-# a fake mouse inside the guest, wisp's grab, the compositor's libinput.
+# A throwaway Arch VM for testing mousewand on compositors other than the host's, end to end:
+# a fake mouse inside the guest, mousewand's grab, the compositor's libinput.
 #
 #   tools/vm/vm.sh setup                download the image, make disk and keys
 #   tools/vm/vm.sh start                boot; the first boot provisions the guest
-#   tools/vm/vm.sh test COMPOSITOR      build wisp, run the guest test on sway, kwin,
+#   tools/vm/vm.sh test COMPOSITOR      build mousewand, run the guest test on sway, kwin,
 #                                       gnome, niri, labwc, cosmic or x11
 #   tools/vm/vm.sh shot OUT.png         screenshot the guest display
-#   tools/vm/vm.sh ssh [CMD...]         a shell in the guest, as user wisp
+#   tools/vm/vm.sh ssh [CMD...]         a shell in the guest, as user mousewand
 #   tools/vm/vm.sh stop                 power off
 #
-# The VM lives in $WISP_VM_DIR (default ~/.cache/wisp-vm). Needs qemu with KVM.
+# The VM lives in $MOUSEWAND_VM_DIR (default ~/.cache/mousewand-vm). Needs qemu with KVM.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
-D=${WISP_VM_DIR:-$HOME/.cache/wisp-vm}
+D=${MOUSEWAND_VM_DIR:-$HOME/.cache/mousewand-vm}
 IMAGE=https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2
 OPTS=(-i "$D/id_vm" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5)
-SSH=(ssh -q "${OPTS[@]}" -p 2222 wisp@127.0.0.1)
+SSH=(ssh -q "${OPTS[@]}" -p 2222 mousewand@127.0.0.1)
 
-put() { scp -q "${OPTS[@]}" -P 2222 "${@:1:$#-1}" "wisp@127.0.0.1:${!#}"; }
+put() { scp -q "${OPTS[@]}" -P 2222 "${@:1:$#-1}" "mousewand@127.0.0.1:${!#}"; }
 
 qmp() {
   python3 -I - "$D/qmp.sock" "$1" <<'EOF'
@@ -63,17 +63,17 @@ provision() {
   "${SSH[@]}" 'sudo pacman -Syu --noconfirm --needed sway kwin gnome-shell niri cosmic-comp labwc \
     xorg-server xorg-xinit xorg-xauth xf86-input-libinput xorg-xinput xfwm4 xterm xdotool picom \
     foot mesa vulkan-swrast xorg-xwayland jq > /tmp/pacman.log 2>&1'
-  put "$ROOT/dist/70-wisp.rules" "$ROOT/dist/wisp-uinput.conf" "$HERE"/guest-*.sh "$HERE/kwin-layout.js" ""
+  put "$ROOT/dist/70-mousewand.rules" "$ROOT/dist/mousewand-uinput.conf" "$HERE"/guest-*.sh "$HERE/kwin-layout.js" ""
   "${SSH[@]}" 'set -e
-    sudo cp 70-wisp.rules /etc/udev/rules.d/
-    sudo cp wisp-uinput.conf /etc/modules-load.d/
+    sudo cp 70-mousewand.rules /etc/udev/rules.d/
+    sudo cp mousewand-uinput.conf /etc/modules-load.d/
     for f in guest-*.sh; do mv "$f" "${f#guest-}"; done
     chmod +x session.sh
     echo none > compositor
     mkdir -p bin cfg/apps ext
     echo "[ \"\$(tty)\" = /dev/tty1 ] && exec ~/session.sh" >> .bash_profile
     sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
-    printf "[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin wisp --noclear %%I \$TERM\n" |
+    printf "[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin mousewand --noclear %%I \$TERM\n" |
       sudo tee /etc/systemd/system/getty@tty1.service.d/autologin.conf > /dev/null
     gsettings set org.gnome.desktop.interface enable-hot-corners false 2> /dev/null || true
     touch .provisioned'
@@ -88,10 +88,10 @@ setup)
   mkdir -p "$D/seed"
   cd "$D"
   curl -fsSLO "$IMAGE" && curl -fsSLO "$IMAGE.SHA256" && sha256sum -c "$(basename "$IMAGE").SHA256"
-  [ -e id_vm ] || ssh-keygen -q -t ed25519 -N "" -C wisp-vm -f id_vm
+  [ -e id_vm ] || ssh-keygen -q -t ed25519 -N "" -C mousewand-vm -f id_vm
   qemu-img create -q -f qcow2 -b "$(basename "$IMAGE")" -F qcow2 disk.qcow2 40G
-  printf 'instance-id: wisp-vm\nlocal-hostname: wisp-vm\n' > seed/meta-data
-  printf '#cloud-config\nusers:\n  - name: wisp\n    groups: [wheel, input, video]\n    sudo: "ALL=(ALL) NOPASSWD:ALL"\n    shell: /bin/bash\n    ssh_authorized_keys:\n      - %s\n' \
+  printf 'instance-id: mousewand-vm\nlocal-hostname: mousewand-vm\n' > seed/meta-data
+  printf '#cloud-config\nusers:\n  - name: mousewand\n    groups: [wheel, input, video]\n    sudo: "ALL=(ALL) NOPASSWD:ALL"\n    shell: /bin/bash\n    ssh_authorized_keys:\n      - %s\n' \
     "$(cat id_vm.pub)" > seed/user-data
   echo "ready: $D"
   ;;
@@ -102,8 +102,8 @@ start)
   ;;
 test)
   compositor=${2:?sway, kwin, gnome, niri, labwc, cosmic or x11}
-  (cd "$ROOT" && cargo build -q -p wisp && cargo build -q -p wisp-input --example probe)
-  put "$ROOT/target/debug/wisp" "$ROOT/target/debug/examples/probe" bin/
+  (cd "$ROOT" && cargo build -q -p mousewand && cargo build -q -p mousewand-input --example probe)
+  put "$ROOT/target/debug/mousewand" "$ROOT/target/debug/examples/probe" bin/
   case "$compositor" in
     sway)
       "${SSH[@]}" 'bash switch.sh sway > /dev/null
@@ -114,7 +114,7 @@ test)
     kwin)
       "${SSH[@]}" 'bash kwin-setup.sh; DISPATCH="Window Maximize" bash test.sh wayland-0'
       ;;
-    # wisp installs its extension, then a Shell restart stands in for logging in again.
+    # mousewand installs its extension, then a Shell restart stands in for logging in again.
     gnome)
       "${SSH[@]}" 'bash gnome-setup.sh restart; bash gnome-setup.sh install; bash gnome-setup.sh restart
         bash gnome-setup.sh window foot; bash test.sh wayland-0
@@ -122,11 +122,11 @@ test)
       ;;
     # These run nested in sway: niri and COSMIC refuse llvmpipe on the bare
     # display.
-    niri) "${SSH[@]}" 'd=$(bash nested.sh niri); WISP_BACKEND=niri DISPATCH=maximize-column bash test.sh $d' ;;
+    niri) "${SSH[@]}" 'd=$(bash nested.sh niri); MOUSEWAND_BACKEND=niri DISPATCH=maximize-column bash test.sh $d' ;;
     labwc | cosmic)
-      "${SSH[@]}" "d=\$(bash nested.sh $compositor); WISP_BACKEND=toplevel bash test.sh \$d"
+      "${SSH[@]}" "d=\$(bash nested.sh $compositor); MOUSEWAND_BACKEND=toplevel bash test.sh \$d"
       ;;
-    # xfwm4 without its compositor, so wisp starts picom. Xorg here applies uinput motion in bursts,
+    # xfwm4 without its compositor, so mousewand starts picom. Xorg here applies uinput motion in bursts,
     # so this checks window lookup and actions; the trail needs smooth motion.
     x11) "${SSH[@]}" 'bash x11-setup.sh; bash test.sh :0' ;;
     *) echo "unknown compositor $compositor" >&2; exit 1 ;;

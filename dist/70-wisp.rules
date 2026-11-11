@@ -1,4 +1,0 @@
-# Let the logged-in user's wisp grab mice and create its virtual device,
-# without root and without the `input` group.
-KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
-SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_MOUSE}=="1", TAG+="uaccess"

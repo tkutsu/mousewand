@@ -1,4 +1,4 @@
-# ~/.config/wisp/config.toml
+# ~/.config/mousewand/config.toml
 # Every setting is optional; these are the defaults.
 
 trigger = "middle"     # middle, side, extra, forward, back or task
@@ -13,7 +13,7 @@ theme = "default"      # or a file in themes/, without .toml
 
 [[gesture]]
 stroke = "UD"
-action = { command = "notify-send wisp \"gesture over $WISP_CLASS\"" }
+action = { command = "notify-send mousewand \"gesture over $MOUSEWAND_CLASS\"" }
 
 # `dispatch` is passed to Hyprland as is. Lua-config Hyprland (0.55+)
 # takes Lua dispatchers; older versions take e.g. "workspace e+1".

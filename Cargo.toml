@@ -1,21 +1,21 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-# wisp-settings embeds its built web UI, so it builds on its own:
-# pnpm -C crates/wisp-settings/ui build, then cargo build -p wisp-settings.
-default-members = ["crates/wisp-core", "crates/wisp-input", "crates/wisp-backend", "crates/wisp-overlay", "crates/wisp"]
+# mousewand-settings embeds its built web UI, so it builds on its own:
+# pnpm -C crates/mousewand-settings/ui build, then cargo build -p mousewand-settings.
+default-members = ["crates/mousewand-core", "crates/mousewand-input", "crates/mousewand-backend", "crates/mousewand-overlay", "crates/mousewand"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/tkutsu/wisp"
+repository = "https://github.com/tkutsu/mousewand"
 
 [workspace.dependencies]
-wisp-core = { path = "crates/wisp-core" }
-wisp-input = { path = "crates/wisp-input" }
-wisp-backend = { path = "crates/wisp-backend" }
-wisp-overlay = { path = "crates/wisp-overlay" }
+mousewand-core = { path = "crates/mousewand-core" }
+mousewand-input = { path = "crates/mousewand-input" }
+mousewand-backend = { path = "crates/mousewand-backend" }
+mousewand-overlay = { path = "crates/mousewand-overlay" }
 
 anyhow = "1"
 log = "0.4"
