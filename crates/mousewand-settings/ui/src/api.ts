@@ -31,7 +31,21 @@ export type Settings = {
   /** What opens this app. */
   openSettings: Drawn;
   hint: Hint;
+  off: Off;
 };
+
+/** Where gestures are off: games, and windows whose class fits a pattern. */
+export type Off = { games: boolean; classes: string[] };
+
+/** Whether `cls` fits `pattern`, ignoring case: `*` is any run of characters, `?` one. */
+const fits = (pattern: string, cls: string) => {
+  const part = (c: string) => (c === "*" ? ".*" : c === "?" ? "." : c.replace(/[\\^$.|+()[\]{}]/, "\\$&"));
+  return new RegExp("^" + [...pattern].map(part).join("") + "$", "i").test(cls);
+};
+
+/** The pattern that turns gestures off over any of `classes`, as the daemon checks it. */
+export const offBy = (off: Off, games: string[], classes: string[]) =>
+  [...(off.games ? games : []), ...off.classes].find((p) => classes.some((c) => fits(p, c))) ?? null;
 
 /** The `[hint]` the form edits. Colors are "#rrggbb" or "#rrggbbaa". */
 export type Hint = {
@@ -102,6 +116,8 @@ export type State = {
   /** The built-in shapes, then the drawn ones. */
   shapes: ShapeInfo[];
   appShortcuts: AppShortcuts[];
+  /** The patterns `off.games` stands for. */
+  gameClasses: string[];
 };
 
 export const load = () => invoke<State>("load");
