@@ -1,0 +1,11 @@
+[package]
+name = "mousewand-shots"
+description = "Compares the VM suite's screenshots of mousewand's trail and hint with Hyprland's"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+png = "0.18"
