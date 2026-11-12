@@ -35,7 +35,7 @@ export default function TrailPreview({ theme }: { theme: ThemeInfo | undefined }
   // One pass of segments at `scale` of the width. Each pass is opaque inside
   // its group, so joints don't stack; the mask fades the whole trail.
   const pass = (scale: number, opacity: number, tint: (rgb: Rgb) => Rgb = (c) => c) => (
-    <g opacity={opacity}>
+    <g key={scale} opacity={opacity}>
       {path.slice(1).map(([x, y], i) => {
         const life = (i + 1) / (POINTS - 1);
         const [px, py] = path[i];

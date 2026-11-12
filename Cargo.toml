@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "tools/shots"]
 # mousewand-settings embeds its built web UI, so it builds on its own:
 # pnpm -C crates/mousewand-settings/ui build, then cargo build -p mousewand-settings.
 default-members = ["crates/mousewand-core", "crates/mousewand-input", "crates/mousewand-backend", "crates/mousewand-overlay", "crates/mousewand"]

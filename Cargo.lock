@@ -2576,6 +2576,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mousewand-shots"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "png",
+]
+
+[[package]]
 name = "muda"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

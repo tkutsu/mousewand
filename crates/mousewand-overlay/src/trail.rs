@@ -78,6 +78,11 @@ impl Trail {
         self.points.last().map(|p| (p.x, p.y))
     }
 
+    #[cfg(test)]
+    pub fn points(&self) -> Vec<(f32, f32)> {
+        self.points.iter().map(|p| (p.x, p.y)).collect()
+    }
+
     /// The strip for time `now` on a `width`×`height` surface.
     pub fn mesh(&mut self, now: f32, (width, height): (f32, f32), style: &Style) -> Vec<Vertex> {
         self.points.retain(|p| now - p.t < style.life);
