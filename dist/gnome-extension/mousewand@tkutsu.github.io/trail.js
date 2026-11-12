@@ -15,7 +15,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Hint} from './hint.js';
 
 const DEFAULT_THEME = {
-    color: [0.45, 0.75, 1.0],
+    colors: [[0.45, 0.75, 1.0]],
     rejected: [1.0, 0.35, 0.35],
     width: 26,
     lifeMs: 450,
@@ -118,9 +118,18 @@ export class Trail {
         const cr = area.get_context();
         const t = now();
         const theme = this._theme;
-        const [r, g, b] = this._ended && !this._matched ? theme.rejected : theme.color;
+        const colors = this._ended && !this._matched ? [theme.rejected] : theme.colors;
         const [ox, oy] = this._origin;
         const life = p => Math.max(0, 1 - (t - p.t) / theme.lifeMs);
+        // The first color at the head (life 1), blending evenly through the
+        // rest to the last at the tail (life 0).
+        const colorAt = l => {
+            const last = colors.length - 1;
+            const x = (1 - l) * last;
+            const i = Math.min(Math.floor(x), Math.max(last - 1, 0));
+            const [a, b] = [colors[i], colors[Math.min(i + 1, last)]];
+            return a.map((c, k) => c + (b[k] - c) * (x - i));
+        };
 
         cr.setOperator(Cairo.Operator.CLEAR);
         cr.paint();
@@ -129,14 +138,14 @@ export class Trail {
 
         // Each pass goes into a group with SOURCE, so overlapping segments
         // replace instead of stacking alpha at every joint.
-        const pass = (widthScale, rgb, alphaScale) => {
+        const pass = (widthScale, tint, alphaScale) => {
             cr.pushGroup();
             cr.setOperator(Cairo.Operator.SOURCE);
             for (let i = 1; i < this._points.length; i++) {
                 const [a, p] = [this._points[i - 1], this._points[i]];
                 const l = life(p);
                 cr.setLineWidth(Math.max(theme.width * Math.pow(l, 0.7) * widthScale, 0.5));
-                cr.setSourceRGBA(...rgb, l * this._fade * alphaScale);
+                cr.setSourceRGBA(...colorAt(l).map(tint), l * this._fade * alphaScale);
                 cr.moveTo(a.x - ox, a.y - oy);
                 cr.lineTo(p.x - ox, p.y - oy);
                 cr.stroke();
@@ -145,14 +154,16 @@ export class Trail {
             cr.setOperator(Cairo.Operator.OVER);
             cr.paint();
         };
+        const plain = c => c;
         const light = c => c + (1 - c) * 0.3;
         // Nested strokes, wide and faint to narrow and strong, stand in for
         // the shader's glow falloff, then the body and its lighter middle.
         for (const [scale, alpha] of [[1.0, 0.08], [0.7, 0.14], [0.45, 0.25]])
-            pass(scale, [r, g, b], theme.glow * alpha);
-        pass(0.32, [r, g, b], 1);
-        pass(0.12, [light(r), light(g), light(b)], 1);
+            pass(scale, plain, theme.glow * alpha);
+        pass(0.32, plain, 1);
+        pass(0.12, light, 1);
 
+        const [r, g, b] = colors[0];
         for (const pulse of this._pulses) {
             const progress = Math.min((t - pulse.t) / RING_LIFE_MS, 1);
             cr.setLineWidth(2 * (7 * (1 - progress) + 2) * 0.5);

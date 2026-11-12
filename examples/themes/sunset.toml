@@ -1,0 +1,7 @@
+# Gold into coral, pink and dusk purple.
+color = ["#ffd36e", "#ff8a5c", "#e85d8a", "#7b4bb7"]
+rejected = "#7f8ca3"
+width = 30
+life_ms = 650
+fade_ms = 400
+glow = 0.8
