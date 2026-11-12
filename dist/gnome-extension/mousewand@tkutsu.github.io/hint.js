@@ -17,6 +17,7 @@ const DEFAULT_STYLE = {
     size: 17,
     text: [0.95, 0.95, 0.97, 1],
     glyph: [0.62, 0.77, 1, 1],
+    failed: [1, 0.35, 0.35, 1],
     background: [0.11, 0.12, 0.15, 1],
     opacity: 0.9,
     padding: 14,
@@ -38,24 +39,28 @@ export class Hint {
     }
 
     // `hint`: {stroke, label, state: 'drawing' | 'fired' | 'missed', next: [[rest, label]]}.
-    show(hint, rejected) {
+    show(hint) {
         const s = this._style;
         if (!s.enabled)
             return;
         this.destroy();
+        // A miss shows only its arrows, in the failed color.
         const [arrow, text, label] = {
             drawing: [css(s.glyph), css(s.text, 0.75), hint.label],
             fired: [css(s.glyph), css(s.text), hint.label],
-            missed: [css([...rejected, 1]), css(s.text, 0.6), hint.label ?? 'No gesture'],
+            missed: [css(s.failed), css(s.failed), hint.label],
         }[hint.state];
-        const rows = [];
-        if (hint.stroke || label)
-            rows.push({arrows: arrows(hint.stroke), label, size: s.size, arrow, text});
+        const main = hint.stroke || label
+            ? {arrows: arrows(hint.stroke), label, size: s.size, arrow, text}
+            : null;
         const next = hint.next.map(([rest, l]) => ({
             arrows: arrows(rest), label: l, size: s.size * 0.82,
             arrow: css(s.glyph, 0.85), text: css(s.text, 0.7), next: true,
         }));
-        if (rows.length + next.length === 0)
+        // At the bottom of the screen there's no room under the main line.
+        const above = s.vertical === 'end';
+        const rows = above ? [...next, main] : [main, ...next];
+        if (!main && next.length === 0)
             return;
         // Next moves line their labels up after the longest stroke.
         const column = Math.max(0, ...next.map(r => [...r.arrows].filter(c => c !== ' ').length)) * s.size * 0.82 * 1.05;
@@ -66,10 +71,15 @@ export class Hint {
             style: `background-color: ${css(s.background)}; border-radius: ${s.radius}px; ` +
                 `padding: ${s.padding}px; font-family: "${s.font}"; spacing: ${s.size * 0.12}px;`,
         });
-        rows.concat(next).forEach((row, i) => {
+        this._main = null;
+        rows.filter(Boolean).forEach((row, i, shown) => {
+            // A gap between the main line and the next moves.
+            const after = i > 0 && row.next !== shown[i - 1].next;
             const line = new St.BoxLayout({
-                style: `spacing: ${row.size * 0.45}px;` + (row.next && i === rows.length && rows.length ? ` margin-top: ${s.size * 0.35}px;` : ''),
+                style: `spacing: ${row.size * 0.45}px;` + (after ? ` margin-top: ${s.size * 0.35}px;` : ''),
             });
+            if (!row.next)
+                this._main = line;
             if (row.arrows || row.next) {
                 line.add_child(new St.Label({
                     text: row.arrows,
@@ -87,16 +97,19 @@ export class Hint {
             this._box.add_child(line);
         });
         Main.layoutManager.uiGroup.add_child(this._box);
-        this._place();
+        this._place(above);
         this.fade(1);
     }
 
-    // Places the panel on the monitor under the pointer.
-    _place() {
+    // Places the panel on the monitor under the pointer, by its main line,
+    // so that stays put while the next moves come and go.
+    _place(above) {
         const s = this._style;
         const monitor = Main.layoutManager.currentMonitor;
         const [, width] = this._box.get_preferred_width(-1);
         const [, height] = this._box.get_preferred_height(width);
+        const [, line] = this._main?.get_preferred_height(width) ?? [0, s.size * 1.45];
+        const main = line + s.padding * 2;
         const at = (align, size, start, room) => ({
             start: start + s.margin,
             center: start + (room - size) / 2,
@@ -104,7 +117,7 @@ export class Hint {
         })[align];
         this._box.set_position(
             Math.round(at(s.horizontal, width, monitor.x, monitor.width)),
-            Math.round(at(s.vertical, height, monitor.y, monitor.height)));
+            Math.round(at(s.vertical, main, monitor.y, monitor.height) - (above ? height - main : 0)));
     }
 
     fade(factor) {

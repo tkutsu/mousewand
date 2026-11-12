@@ -3,6 +3,7 @@ import { buttonOf } from "./keys";
 
 const BUTTONS: [string, string][] = [
   ["middle", "Middle (wheel click)"],
+  ["right", "Right"],
   ["back", "Back (mouse 4)"],
   ["forward", "Forward (mouse 5)"],
   ["mouse6", "Mouse 6"],
@@ -29,7 +30,7 @@ export default function ButtonInput({ value, onChange }: { value: string; onChan
     };
     const up = (e: MouseEvent) => {
       swallow(e);
-      // Left and right cancel.
+      // Left cancels.
       if (pressed) onChange(pressed);
       setDetecting(false);
     };

@@ -69,11 +69,11 @@ export function comboOf(event: KeyboardEvent): string | null {
 }
 
 /**
- * The trigger name for a mouse button press, or null for left and right.
+ * The trigger name for a mouse button press, or null for left.
  * Browsers report the buttons up to mouse 5: mouse 4 is back, 5 forward.
  */
 export function buttonOf(event: MouseEvent): string | null {
-  const names: Record<number, string> = { 1: "middle", 3: "back", 4: "forward" };
+  const names: Record<number, string> = { 1: "middle", 2: "right", 3: "back", 4: "forward" };
   return names[event.button] ?? null;
 }
 
