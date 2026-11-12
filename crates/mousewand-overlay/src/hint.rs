@@ -2,16 +2,17 @@
 //! one quad. It changes a few times per gesture at most, so painting is
 //! cheap next to the trail's frames.
 //!
-//! Arrows are drawn as paths, so they look the same in every font, and so is
-//! the outline of a shape that fired. Text uses the font fontconfig picks for
-//! `style.font`.
+//! Arrows are drawn as paths, so they look the same in every font, and so are
+//! the outline of a shape that fired and the mouse of a wheel or click
+//! gesture. Text uses the font fontconfig picks for `style.font`.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use ab_glyph::{Font, FontVec, OutlineCurve, PxScale, ScaleFont};
+use mousewand_core::config::BTN_LEFT;
 use mousewand_core::hint::{Hint, State};
 use mousewand_core::shape::Point;
-use mousewand_core::{Align, Dir, HintStyle, Rgba};
+use mousewand_core::{Align, Dir, HintStyle, Input, Rgba, Wheel};
 use tiny_skia::{FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Rect, Transform};
 
 /// Premultiplied RGBA pixels.
@@ -33,17 +34,58 @@ pub struct Painter {
     font: Option<(String, Option<FontVec>)>,
 }
 
-/// A row: arrows or a shape, then a label.
+/// A row: arrows, a shape or a mouse, then a label, then how many times
+/// it fired.
 struct Row<'a> {
-    arrows: &'a [Dir],
-    /// A shape's outline, drawn instead of the arrows.
-    shape: Option<&'a [Point]>,
+    mark: Mark<'a>,
     label: Option<&'a str>,
+    /// "3×", for a repeat.
+    count: Option<String>,
     size: f32,
     arrow: [f32; 4],
     text: [f32; 4],
-    /// A possible next move, not the stroke so far.
-    next: bool,
+    /// In the list beside the main line: a possible next move, or the
+    /// gesture's name. The main line is only the stroke so far.
+    listed: bool,
+}
+
+/// What a row draws before its label.
+#[derive(Clone, Copy)]
+enum Mark<'a> {
+    Arrows(&'a [Dir]),
+    /// A shape's outline.
+    Shape(&'a [Point]),
+    Mouse(Part),
+}
+
+/// The part of the mouse a wheel or click gesture uses.
+#[derive(Clone, Copy)]
+enum Part {
+    Left,
+    Right,
+    Wheel(Wheel),
+}
+
+impl<'a> Mark<'a> {
+    fn of(input: &'a Input) -> Mark<'a> {
+        match input {
+            Input::Stroke(stroke) => Mark::Arrows(&stroke.0),
+            Input::Shape(shape) => Mark::Shape(shape.outline()),
+            Input::Wheel(wheel) => Mark::Mouse(Part::Wheel(*wheel)),
+            Input::Click(BTN_LEFT) => Mark::Mouse(Part::Left),
+            Input::Click(_) => Mark::Mouse(Part::Right),
+        }
+    }
+
+    /// How many arrow squares it takes: a wheel's arrow tucks in close to
+    /// its mouse.
+    fn squares(self) -> f32 {
+        match self {
+            Mark::Arrows(arrows) => arrows.len() as f32,
+            Mark::Mouse(Part::Wheel(_)) => 1.75,
+            _ => 1.0,
+        }
+    }
 }
 
 /// Whether the next moves go above the main line: at the bottom of the
@@ -58,7 +100,7 @@ impl Painter {
     pub fn paint(&mut self, hint: &Hint, style: &HintStyle, scale: f32) -> Option<Image> {
         let font = self.font(&style.font);
         let size = style.size * scale;
-        let small = size * 0.82;
+        let small = style.next_size * scale;
         let dim = |c: Rgba, f: f32| [c.0[0], c.0[1], c.0[2], c.0[3] * f];
         // A miss shows its arrows in the failed color.
         let (arrow, text) = match hint.state {
@@ -66,53 +108,69 @@ impl Painter {
             State::Fired => (style.glyph.0, style.text.0),
             State::Missed => (style.failed.0, style.failed.0),
         };
-        // A miss has a label only when it was cancelled.
-        let label = hint.label.as_deref();
-        let main = (!hint.stroke.0.is_empty() || label.is_some()).then(|| Row {
-            arrows: &hint.stroke.0,
-            shape: hint.shape.as_ref().map(|s| s.outline()),
-            label,
+        let mark = hint.input.as_ref().map_or(Mark::Arrows(&hint.stroke.0), Mark::of);
+        let main = (mark.squares() > 0.0).then_some(Row {
+            mark,
+            label: None,
+            count: None,
             size,
             arrow,
             text,
-            next: false,
+            listed: false,
+        });
+        // The gesture's name, next to the main line. A miss has one only
+        // when it was cancelled.
+        let name = hint.label.as_deref().map(|label| Row {
+            mark: Mark::Arrows(&[]),
+            label: Some(label),
+            count: (hint.count > 1).then(|| format!("{}×", hint.count)),
+            size: small,
+            arrow,
+            text,
+            listed: true,
         });
         let next = hint.next.iter().map(|(rest, label)| Row {
-            arrows: &rest.0,
-            shape: None,
+            mark: Mark::of(rest),
             label: Some(label),
+            count: None,
             size: small,
             arrow: dim(style.glyph, 0.85),
-            text: dim(style.text, 0.7),
-            next: true,
+            text: style.next_text.0,
+            listed: true,
         });
         let above = next_above(style);
         let rows: Vec<Row> = match above {
-            true => next.chain(main).collect(),
-            false => main.into_iter().chain(next).collect(),
+            true => next.chain(name).chain(main).collect(),
+            false => main.into_iter().chain(name).chain(next).collect(),
         };
         if rows.is_empty() {
             return None;
         }
 
-        // A shape takes one arrow's square. Next moves line their labels up
-        // after the longest stroke.
-        let marks = |row: &Row| if row.shape.is_some() { 1 } else { row.arrows.len() };
-        let arrows_width = |row: &Row| marks(row) as f32 * row.size * 1.05;
-        let next_arrows = rows.iter().filter(|r| r.next).map(arrows_width).fold(0.0, f32::max);
-        let gap = |row: &Row| if marks(row) == 0 { 0.0 } else { row.size * 0.45 };
+        // A shape or a click takes one arrow's square, a wheel a bit more.
+        // Listed labels line up after the longest of their strokes.
+        let arrows_width = |row: &Row| row.mark.squares() * row.size * 1.05;
+        let column = rows.iter().filter(|r| r.listed).map(arrows_width).fold(0.0, f32::max);
+        let gap = |row: &Row| if column > 0.0 { row.size * 0.45 } else { 0.0 };
+        let count_gap = |row: &Row| row.size * 0.4;
         let widths: Vec<f32> = rows
             .iter()
             .map(|row| {
-                let arrows = if row.next { next_arrows } else { arrows_width(row) };
+                if !row.listed {
+                    return arrows_width(row);
+                }
                 let label = row.label.map_or(0.0, |l| gap(row) + text_width(font, l, row.size));
-                arrows + label
+                let count = row
+                    .count
+                    .as_deref()
+                    .map_or(0.0, |c| count_gap(row) + text_width(font, c, row.size));
+                column + label + count
             })
             .collect();
         let pad = style.padding * scale;
         let line = |row: &Row| row.size * 1.45;
-        // Between the main line and the next moves, if there are both.
-        let mixed = rows.windows(2).any(|w| w[0].next != w[1].next);
+        // Between the main line and the list, if there are both.
+        let mixed = rows.windows(2).any(|w| w[0].listed != w[1].listed);
         let spacing = if mixed { size * 0.35 } else { 0.0 };
         let width = (widths.iter().fold(0.0, |a: f32, &b| a.max(b)) + pad * 2.0).ceil();
         let height = (rows.iter().map(line).sum::<f32>() + spacing + pad * 2.0).ceil();
@@ -133,30 +191,37 @@ impl Painter {
         }
         let mut y = pad;
         for (i, row) in rows.iter().enumerate() {
-            if i > 0 && row.next != rows[i - 1].next {
+            if i > 0 && row.listed != rows[i - 1].listed {
                 y += spacing;
             }
             let h = line(row);
             let mut x = pad;
             let top = y + (h - row.size) / 2.0;
-            match row.shape {
-                Some(outline) => {
-                    draw_shape(&mut pixmap, outline, x, top, row.size, row.arrow);
-                    x += row.size * 1.05;
-                }
-                None => {
-                    for &dir in row.arrows {
-                        draw_arrow(&mut pixmap, dir, x, top, row.size, row.arrow);
-                        x += row.size * 1.05;
+            let square = row.size * 1.05;
+            match row.mark {
+                Mark::Arrows(arrows) => {
+                    for (i, &dir) in arrows.iter().enumerate() {
+                        draw_arrow(&mut pixmap, dir, x + i as f32 * square, top, row.size, row.arrow);
                     }
                 }
+                Mark::Shape(outline) => draw_shape(&mut pixmap, outline, x, top, row.size, row.arrow),
+                Mark::Mouse(part) => draw_mouse(&mut pixmap, part, x, top, row.size, row.arrow),
             }
-            if row.next {
-                x = pad + next_arrows;
+            x += row.mark.squares() * square;
+            if row.listed {
+                x = pad + column;
             }
-            if let (Some(label), Some(font)) = (row.label, font) {
-                x += gap(row);
-                draw_text(&mut pixmap, font, label, x, y + h / 2.0, row.size, row.text);
+            if let Some(font) = font {
+                if let Some(label) = row.label {
+                    x += gap(row);
+                    draw_text(&mut pixmap, font, label, x, y + h / 2.0, row.size, row.text);
+                    x += text_width(Some(font), label, row.size);
+                }
+                // In the arrows' color, so it reads as part of the gesture.
+                if let Some(count) = &row.count {
+                    x += count_gap(row);
+                    draw_text(&mut pixmap, font, count, x, y + h / 2.0, row.size, row.arrow);
+                }
             }
             y += h;
         }
@@ -210,20 +275,29 @@ fn rounded_rect(w: f32, h: f32, r: f32) -> Option<tiny_skia::Path> {
     if r <= 0.0 {
         return Some(PathBuilder::from_rect(Rect::from_xywh(0.0, 0.0, w, h)?));
     }
-    // Quarter circles as cubics.
-    let k = r * 0.5523;
     let mut p = PathBuilder::new();
-    p.move_to(r, 0.0);
-    p.line_to(w - r, 0.0);
-    p.cubic_to(w - r + k, 0.0, w, r - k, w, r);
-    p.line_to(w, h - r);
-    p.cubic_to(w, h - r + k, w - r + k, h, w - r, h);
-    p.line_to(r, h);
-    p.cubic_to(r - k, h, 0.0, h - r + k, 0.0, h - r);
-    p.line_to(0.0, r);
-    p.cubic_to(0.0, r - k, r - k, 0.0, r, 0.0);
-    p.close();
+    add_rounded_rect(&mut p, (0.0, 0.0), w, h, r);
     p.finish()
+}
+
+/// How far a quarter circle's cubic puts its control points from the ends,
+/// per unit of radius.
+const QUARTER: f32 = 0.5523;
+
+/// A rounded rect with its top-left corner at `(x, y)`, as a subpath of `p`.
+fn add_rounded_rect(p: &mut PathBuilder, (x, y): (f32, f32), w: f32, h: f32, r: f32) {
+    let k = r * QUARTER;
+    let (x1, y1) = (x + w, y + h);
+    p.move_to(x + r, y);
+    p.line_to(x1 - r, y);
+    p.cubic_to(x1 - r + k, y, x1, y + r - k, x1, y + r);
+    p.line_to(x1, y1 - r);
+    p.cubic_to(x1, y1 - r + k, x1 - r + k, y1, x1 - r, y1);
+    p.line_to(x + r, y1);
+    p.cubic_to(x + r - k, y1, x, y1 - r + k, x, y1 - r);
+    p.line_to(x, y + r);
+    p.cubic_to(x, y + r - k, x + r - k, y, x + r, y);
+    p.close();
 }
 
 /// An arrow pointing `dir`, filling a `size` square at (x, y).
@@ -279,6 +353,64 @@ fn draw_shape(pixmap: &mut Pixmap, outline: &[Point], x: f32, y: f32, size: f32,
     let Some(path) = p.finish() else { return };
     let transform = Transform::from_scale(size, size).post_translate(x, y);
     pixmap.stroke_path(&path, &paint(color), &pen(0.09), transform, None);
+}
+
+/// A mouse in a `size` square at (x, y): its outline faint and the part a
+/// gesture uses solid, a button, or the wheel, with an arrow after it for
+/// the way it turns.
+fn draw_mouse(pixmap: &mut Pixmap, part: Part, x: f32, y: f32, size: f32, color: [f32; 4]) {
+    // The body, in a unit square, and the line under its buttons.
+    let (x0, y0, w, h, r) = (0.2, 0.04, 0.6, 0.92, 0.24);
+    let buttons = 0.42;
+    let at = Transform::from_scale(size, size).post_translate(x, y);
+    let solid = paint(color);
+
+    // One path, so the faint lines don't darken where they cross.
+    let mut p = PathBuilder::new();
+    add_rounded_rect(&mut p, (x0, y0), w, h, r);
+    p.move_to(x0, buttons);
+    p.line_to(x0 + w, buttons);
+    p.move_to(0.5, y0);
+    p.line_to(0.5, buttons);
+    if let Some(outline) = p.finish() {
+        let faint = [color[0], color[1], color[2], color[3] * 0.6];
+        pixmap.stroke_path(&outline, &paint(faint), &pen(0.08), at, None);
+    }
+
+    match part {
+        Part::Left | Part::Right => {
+            // The left button; the right one is its mirror image.
+            let k = r * QUARTER;
+            let mut p = PathBuilder::new();
+            p.move_to(0.5, y0);
+            p.line_to(x0 + r, y0);
+            p.cubic_to(x0 + r - k, y0, x0, y0 + r - k, x0, y0 + r);
+            p.line_to(x0, buttons);
+            p.line_to(0.5, buttons);
+            p.close();
+            let mirror = match part {
+                Part::Right => Transform::from_row(-1.0, 0.0, 0.0, 1.0, 1.0, 0.0),
+                _ => Transform::identity(),
+            };
+            if let Some(button) = p.finish() {
+                pixmap.fill_path(&button, &solid, FillRule::Winding, mirror.post_concat(at), None);
+            }
+        }
+        Part::Wheel(wheel) => {
+            let mut p = PathBuilder::new();
+            add_rounded_rect(&mut p, (0.43, 0.12), 0.14, 0.22, 0.07);
+            if let Some(wheel) = p.finish() {
+                pixmap.fill_path(&wheel, &solid, FillRule::Winding, at, None);
+            }
+            let dir = match wheel {
+                Wheel::Up => Dir::Up,
+                Wheel::Down => Dir::Down,
+                Wheel::Left => Dir::Left,
+                Wheel::Right => Dir::Right,
+            };
+            draw_arrow(pixmap, dir, x + size * 0.75, y, size, color);
+        }
+    }
 }
 
 /// A round line `width` wide, in a unit square.
@@ -467,8 +599,9 @@ mod tests {
     #[test]
     fn a_fired_shape_takes_one_arrow_s_room() {
         let config = Config::parse(
-            "[[gesture]]\nshape = \"circle\"\nname = \"Menu\"\naction = { keys = \"F10\" }\n\n\
-             [[gesture]]\nstroke = \"DLURD\"\nname = \"Menu\"\naction = { keys = \"F10\" }",
+            // Names narrower than the main line, which sets the width.
+            "[[gesture]]\nshape = \"circle\"\nname = \".\"\naction = { keys = \"F10\" }\n\n\
+             [[gesture]]\nstroke = \"DLURD\"\nname = \".\"\naction = { keys = \"F10\" }",
             &[],
             &[],
         )
@@ -477,7 +610,7 @@ mod tests {
         let mut painter = Painter::default();
         let mut width = |gesture| {
             painter
-                .paint(&Hint::fired(&stroke, gesture), &config.hint, 1.0)
+                .paint(&Hint::fired(&stroke, gesture, 1), &config.hint, 1.0)
                 .unwrap()
                 .width
         };
@@ -499,8 +632,62 @@ mod tests {
         )
         .unwrap();
         let missed = painter.paint(&Hint::missed(&stroke), &style, 1.0);
-        let fired = painter.paint(&Hint::fired(&stroke, &config.gestures[0]), &style, 1.0);
+        let fired = painter.paint(&Hint::fired(&stroke, &config.gestures[0], 1), &style, 1.0);
         assert!(missed.unwrap().width < fired.unwrap().width, "no label on a miss");
         assert!(painter.paint(&Hint::missed(&Stroke::default()), &style, 1.0).is_none());
+    }
+
+    #[test]
+    fn a_wheel_takes_its_arrow_s_room_and_a_repeat_counts() {
+        let config = Config::parse(
+            // Names narrower than the main line, and one that's wider.
+            "[[gesture]]\nwheel = \"up\"\nname = \".\"\naction = { keys = \"F5\" }\n\n\
+             [[gesture]]\nclick = \"left\"\nname = \".\"\naction = { keys = \"F6\" }\n\n\
+             [[gesture]]\nwheel = \"down\"\nname = \"Quieter\"\naction = { keys = \"F7\" }",
+            &[],
+            &[],
+        )
+        .unwrap();
+        let mut painter = Painter::default();
+        let mut width = |gesture, count| {
+            painter
+                .paint(&Hint::fired(&Stroke::default(), gesture, count), &config.hint, 1.0)
+                .unwrap()
+                .width
+        };
+        let (wheel, click) = (&config.gestures[0], &config.gestures[1]);
+        let more = (width(wheel, 1) - width(click, 1)) as f32 - config.hint.size * 1.05 * 0.75;
+        assert!(
+            more.abs() <= 1.0,
+            "a wheel is a mouse and three quarters of an arrow wider"
+        );
+        let quieter = &config.gestures[2];
+        assert!(width(quieter, 3) > width(quieter, 1), "3× after the name");
+        assert_eq!(width(quieter, 1), width(quieter, 0), "once is no count");
+    }
+
+    #[test]
+    fn the_name_is_listed_beside_the_main_line() {
+        let config = Config::parse(
+            "[[gesture]]\nstroke = \"D\"\nname = \"Reload\"\naction = { keys = \"F5\" }",
+            &[],
+            &[],
+        )
+        .unwrap();
+        let stroke: Stroke = "D".parse().unwrap();
+        let mut painter = Painter::default();
+        let mut paint_at = |position: &str| {
+            let style = HintStyle {
+                position: position.parse().unwrap(),
+                ..config.hint.clone()
+            };
+            painter
+                .paint(&Hint::fired(&stroke, &config.gestures[0], 1), &style, 1.0)
+                .unwrap()
+        };
+        let (bottom, top) = (paint_at("bottom"), paint_at("top"));
+        assert!(bottom.height as f32 > bottom.main.1, "a row beside the arrows");
+        assert!(bottom.main.0 > 0.0, "at the bottom, the name goes above");
+        assert_eq!(top.main.0, 0.0, "elsewhere, below");
     }
 }

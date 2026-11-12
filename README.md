@@ -217,7 +217,7 @@ open_settings = { shape = "circle" }   # or a stroke, like { stroke = "U39D" }
 
 ### Hints
 
-Hints show the stroke so far as arrows, what it could still become, and the name of the gesture that fired. They fade out with the trail. They're off until you turn them on, under Appearance in the settings app, which also picks a style and shows an example.
+Hints show the stroke so far as arrows and, in a list beside it, the name of the gesture it matches and what it could still become. A wheel or click gesture shows a mouse with its wheel or button lit, and one that fires again and again, a repeat or the wheel, counts up: "Next tab 3×". Before you draw anything, the list of what you could do includes the wheel and click gestures. Hints fade out with the trail. They're off until you turn them on, under Appearance in the settings app, which also picks a style and shows examples.
 
 ```toml
 [hint]
@@ -226,9 +226,11 @@ next = true                  # list what the stroke could still become
 position = "bottom center"   # top, center or bottom, with left, center or right
 margin = 64                  # pixels from the screen edge
 font = "sans-serif"          # any installed font family
-size = 17                    # text size in pixels
+size = 17                    # the stroke's size in pixels
+next_size = 14               # the list's text size in pixels
 text = "#f2f2f7"
-glyph = "#9ec4ff"            # the arrows
+next_text = "#8e8e93"        # what the stroke could still become"
+glyph = "#9ec4ff"            # the arrows, mice and counts
 failed = "#ff5959"           # arrows once the stroke matches nothing
 background = "#1c1e26"       # "#rrggbbaa" for a see-through background
 opacity = 0.9

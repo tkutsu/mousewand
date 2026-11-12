@@ -26,8 +26,8 @@ pub enum Fire {
 pub struct Session {
     gestures: Vec<Gesture>,
     locked: Option<Locked>,
-    /// Whether anything has fired yet.
-    fired: bool,
+    /// What fired last, and how many times in a row.
+    fired: Option<(Gesture, u32)>,
     /// The modifier keys held on the keyboard: only gestures `with` exactly
     /// these can fire.
     mods: Mods,
@@ -53,7 +53,7 @@ impl Session {
         Session {
             gestures,
             locked: None,
-            fired: false,
+            fired: None,
             mods: Mods::NONE,
             abandoned: false,
             tolerance,
@@ -77,7 +77,7 @@ impl Session {
     /// Gives up on the gesture, unless something has fired: nothing fires
     /// from now on. Returns whether it gave up.
     pub fn abandon(&mut self) -> bool {
-        if self.fired || self.locked.is_some() {
+        if self.fired.is_some() || self.locked.is_some() {
             return false;
         }
         self.abandoned = true;
@@ -90,7 +90,13 @@ impl Session {
 
     /// Whether the gesture matched anything, for feedback.
     pub fn matched(&self) -> bool {
-        self.fired
+        self.fired.is_some()
+    }
+
+    /// What fired last, and how many times in a row: a repeat's every step
+    /// and notch counts.
+    pub fn fired(&self) -> Option<(&Gesture, u32)> {
+        self.fired.as_ref().map(|(gesture, count)| (gesture, *count))
     }
 
     /// Whether a repeat or hold gesture has taken over.
@@ -100,7 +106,7 @@ impl Session {
 
     /// The live stroke changed.
     pub fn stroke(&mut self, stroke: &Stroke) -> Vec<Fire> {
-        if self.locked.is_some() || self.fired || self.abandoned {
+        if self.locked.is_some() || self.fired.is_some() || self.abandoned {
             return Vec::new();
         }
         let Some(gesture) = self
@@ -115,6 +121,7 @@ impl Session {
             Kind::Oneshot => unreachable!("filtered above"),
         };
         let last = *stroke.0.last().expect("strokes aren't empty");
+        let gesture = gesture.clone();
         let action = gesture.action.clone();
         let mut fires: Vec<Fire> = held.iter().cloned().map(Fire::Hold).collect();
         fires.push(Fire::Run(action.clone()));
@@ -125,7 +132,7 @@ impl Session {
             step,
             travel: 0.0,
         });
-        self.fired = true;
+        self.fired = Some((gesture, 1));
         fires
     }
 
@@ -141,12 +148,15 @@ impl Session {
             locked.travel -= locked.step;
             fires.push(Fire::Run(locked.action.clone()));
         }
+        self.count(fires.len());
         fires
     }
 
     pub fn wheel(&mut self, wheel: Wheel) -> Vec<Fire> {
         if let Some(locked) = &self.locked {
-            return vec![Fire::Run(locked.action.clone())];
+            let fire = Fire::Run(locked.action.clone());
+            self.count(1);
+            return vec![fire];
         }
         if self.abandoned {
             return Vec::new();
@@ -169,7 +179,7 @@ impl Session {
             return self.cancel();
         }
         // After a wheel or click gesture, the motion was incidental.
-        if self.fired || self.abandoned || drawing.stroke.is_empty() {
+        if self.fired.is_some() || self.abandoned || drawing.stroke.is_empty() {
             return Vec::new();
         }
         let exact = Input::Stroke(drawing.stroke.clone());
@@ -217,13 +227,21 @@ impl Session {
     }
 
     fn fire_once(&mut self, input: &Input) -> Vec<Fire> {
-        match self.find(input) {
-            Some(gesture) => {
-                let action = gesture.action.clone();
-                self.fired = true;
-                vec![Fire::Run(action)]
-            }
-            None => Vec::new(),
+        let Some(gesture) = self.find(input).cloned() else {
+            return Vec::new();
+        };
+        let action = gesture.action.clone();
+        self.fired = match self.fired.take() {
+            Some((last, count)) if last == gesture => Some((last, count + 1)),
+            _ => Some((gesture, 1)),
+        };
+        vec![Fire::Run(action)]
+    }
+
+    /// The locked gesture fired `more` times again.
+    fn count(&mut self, more: usize) {
+        if let Some((_, count)) = &mut self.fired {
+            *count += more as u32;
         }
     }
 }
@@ -365,6 +383,10 @@ mod tests {
         // Once locked, the stroke no longer matters.
         assert_eq!(session.stroke(&s("UR")), []);
         assert_eq!(session.wheel(Wheel::Up), [keys("ctrl+Tab")]);
+        assert_eq!(
+            session.fired().map(|(g, n)| (&g.input, n)),
+            Some((&Input::Stroke(s("U")), 5))
+        );
         assert_eq!(session.end(&drawn("UR")), []);
     }
 
@@ -419,12 +441,18 @@ mod tests {
 
     #[test]
     fn wheel_and_click_fire_each_time_and_skip_the_stroke() {
-
         let mut session = session();
         assert_eq!(session.wheel(Wheel::Down), [command("scrolled")]);
         assert_eq!(session.wheel(Wheel::Down), [command("scrolled")]);
         assert_eq!(session.wheel(Wheel::Up), []);
+        let fired = |session: &Session| session.fired().map(|(g, n)| (g.input.clone(), n));
+        assert_eq!(fired(&session), Some((Input::Wheel(Wheel::Down), 2)));
         assert_eq!(session.click(crate::config::BTN_RIGHT), [command("rocked")]);
+        assert_eq!(
+            fired(&session),
+            Some((Input::Click(crate::config::BTN_RIGHT), 1)),
+            "a new run"
+        );
         assert_eq!(session.stroke(&s("U")), [], "no repeat after a wheel gesture");
         assert_eq!(session.end(&drawn("L")), []);
     }

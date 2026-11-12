@@ -32,8 +32,6 @@ struct Active {
     /// Whether the window has been focused for this gesture yet.
     focused: bool,
     stroke: Stroke,
-    /// What fired last, for the hint.
-    fired: Option<Gesture>,
 }
 
 /// How long a command in a sequence may run before the next step goes on
@@ -96,8 +94,8 @@ impl Daemon {
                 self.run(|s| s.end(&drawing));
                 self.show_hint(true);
                 let active = self.active.take();
-                let fired = active.as_ref().and_then(|a| a.fired.as_ref());
-                if let Some(mousewand_core::Input::Stroke(bound)) = fired.map(|g| &g.input)
+                let fired = active.as_ref().and_then(|a| a.session.fired()).map(|(g, _)| &g.input);
+                if let Some(mousewand_core::Input::Stroke(bound)) = fired
                     && *bound != stroke
                 {
                     log::info!("{stroke}: close to {bound}");
@@ -185,7 +183,6 @@ impl Daemon {
             window,
             focused: global,
             stroke: Stroke::default(),
-            fired: None,
         });
         self.read_mods();
         self.show_hint(false);
@@ -235,8 +232,8 @@ impl Daemon {
         if !self.config.hint.enabled || active.session.abandoned() {
             return;
         }
-        let hint = match (&active.fired, ended) {
-            (Some(gesture), _) => Hint::fired(&active.stroke, gesture),
+        let hint = match (active.session.fired(), ended) {
+            (Some((gesture, count)), _) => Hint::fired(&active.stroke, gesture, count),
             (None, true) => Hint::missed(&active.stroke),
             (None, false) => {
                 let candidates: Vec<Gesture> = active.session.candidates().cloned().collect();
@@ -258,9 +255,8 @@ impl Daemon {
         let was_locked = active.session.locked();
         let mut fired = false;
         for fire in step(&mut active.session) {
-            if let Fire::Run(action) = &fire {
+            if matches!(fire, Fire::Run(_)) {
                 fired = true;
-                active.fired = active.session.candidates().find(|g| &g.action == action).cloned();
                 // Shift held on the keyboard would turn ctrl+t into
                 // ctrl+shift+t: keys wait until it's let go.
                 if !active.session.mods().is_empty() {
