@@ -158,7 +158,8 @@ test)
   failed=()
   for c in "$@"; do
     echo "=== $c"
-    rm -f "$D/shots/$c"-*.png
+    # Only a run that takes new shots drops the old ones.
+    case " ${SCENARIOS:-screens} " in *" screens "*) rm -f "$D/shots/$c"-*.png ;; esac
     "${SSH[@]}" "SCENARIOS='${SCENARIOS:-}' bash suite.sh $c" | tee "$D/results/$c.txt"
     [ "${PIPESTATUS[0]}" = 0 ] || failed+=("$c")
   done

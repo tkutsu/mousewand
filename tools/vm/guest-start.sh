@@ -54,8 +54,34 @@ case "$C" in
       rm ~/.config/niri/config.kdl.mousewand-backup
     nested niri
     ;;
-  labwc) nested labwc ;;
-  cosmic) nested cosmic-comp ;;
+  # labwc and COSMIC float new windows and focus by click: tile them and turn
+  # on focus-follows-mouse, which mousewand needs on both.
+  labwc)
+    mkdir -p ~/.config/labwc
+    cat > ~/.config/labwc/rc.xml <<'EOF'
+<?xml version="1.0"?>
+<labwc_config>
+  <focus><followMouse>yes</followMouse></focus>
+  <windowRules>
+    <windowRule identifier="foot" serverDecoration="no">
+      <action name="MoveTo" x="0" y="0"/><action name="ResizeTo" width="800" height="900"/>
+    </windowRule>
+    <windowRule identifier="other" serverDecoration="no">
+      <action name="MoveTo" x="800" y="0"/><action name="ResizeTo" width="800" height="900"/>
+    </windowRule>
+  </windowRules>
+</labwc_config>
+EOF
+    nested labwc
+    ;;
+  cosmic)
+    c=~/.config/cosmic/com.system76.CosmicComp/v1
+    mkdir -p $c
+    echo true > $c/autotile
+    echo Global > $c/autotile_behavior
+    echo true > $c/focus_follows_cursor
+    nested cosmic-comp
+    ;;
   sway)
     sway_up
     display=$(newest)
