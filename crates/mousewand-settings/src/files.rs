@@ -82,6 +82,7 @@ impl From<&Off> for OffList {
 
 /// The `[hint]` keys the form edits. Others there, like `margin`, stay.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Hint {
     pub enabled: bool,
     pub next: bool,
@@ -89,8 +90,11 @@ pub struct Hint {
     pub position: String,
     pub font: String,
     pub size: f64,
+    /// The gesture's name and the next moves.
+    pub next_size: f64,
     /// Colors as "#rrggbb" or "#rrggbbaa".
     pub text: String,
+    pub next_text: String,
     pub glyph: String,
     /// The arrows and text once the stroke matches nothing.
     pub failed: String,
@@ -108,7 +112,9 @@ impl From<&HintStyle> for Hint {
             position: style.position.to_string(),
             font: style.font.clone(),
             size: float(style.size),
+            next_size: float(style.next_size),
             text: style.text.to_string(),
+            next_text: style.next_text.to_string(),
             glyph: style.glyph.to_string(),
             failed: style.failed.to_string(),
             background: style.background.to_string(),
@@ -569,7 +575,9 @@ fn edit_main(text: &str, settings: &Settings, global: &[Gesture]) -> Result<Stri
         table["position"] = value(&hint.position);
         table["font"] = value(&hint.font);
         table["size"] = number(hint.size);
+        table["next_size"] = number(hint.next_size);
         table["text"] = value(&hint.text);
+        table["next_text"] = value(&hint.next_text);
         table["glyph"] = value(&hint.glyph);
         table["failed"] = value(&hint.failed);
         table["background"] = value(&hint.background);
@@ -926,6 +934,8 @@ mod tests {
             position: "top right".into(),
             background: "#ffffffcc".into(),
             failed: "#c0392b".into(),
+            next_text: "#808080".into(),
+            next_size: 12.0,
             radius: 6.0,
             ..settings.hint
         };
@@ -933,7 +943,7 @@ mod tests {
         let main = std::fs::read_to_string(path.join("config.toml")).unwrap();
         assert!(main.contains("margin = 20 # mine"), "{main}");
         assert!(
-            main.contains("enabled = true") && main.contains("radius = 6\n"),
+            main.contains("enabled = true") && main.contains("radius = 6\n") && main.contains("next_size = 12\n"),
             "{main}"
         );
         assert_eq!(dir.load(None).unwrap().settings.hint, settings.hint);

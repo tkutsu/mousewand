@@ -4,5 +4,5 @@
   "description": "Tells the mousewand mouse-gesture daemon which window is under the cursor, and focuses it.",
   "shell-version": ["45", "46", "47", "48", "49", "50", "51"],
   "url": "https://github.com/tkutsu/mousewand",
-  "version": 4
+  "version": 6
 }

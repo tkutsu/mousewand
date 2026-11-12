@@ -1,6 +1,7 @@
 // The hint panel, drawn by GNOME Shell: the stroke so far as arrows, what
-// it could still become, and what fired. It follows mousewand's own hint,
-// with St labels instead of a painted image, and fades with the trail.
+// it could still become, and what fired, how many times. It follows
+// mousewand's own hint, with St labels instead of a painted image, and fades
+// with the trail.
 
 import Cairo from 'cairo';
 import Clutter from 'gi://Clutter';
@@ -8,6 +9,8 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const ARROWS = {U: '↑', D: '↓', L: '←', R: '→', 7: '↖', 9: '↗', 1: '↙', 3: '↘'};
+// The way each wheel mouse turns.
+const WHEEL = {'wheel up': 'U', 'wheel down': 'D', 'wheel left': 'L', 'wheel right': 'R'};
 
 const DEFAULT_STYLE = {
     enabled: false,
@@ -16,7 +19,9 @@ const DEFAULT_STYLE = {
     margin: 64,
     font: 'sans-serif',
     size: 17,
+    nextSize: 14,
     text: [0.95, 0.95, 0.97, 1],
+    nextText: [0.557, 0.557, 0.576, 1],
     glyph: [0.62, 0.77, 1, 1],
     failed: [1, 0.35, 0.35, 1],
     background: [0.11, 0.12, 0.15, 1],
@@ -56,6 +61,74 @@ function shapeArea(outline, size, [r, g, b, a]) {
     return area;
 }
 
+function roundedRect(cr, x, y, w, h, r) {
+    cr.newSubPath();
+    cr.arc(x + w - r, y + r, r, -Math.PI / 2, 0);
+    cr.arc(x + w - r, y + h - r, r, 0, Math.PI / 2);
+    cr.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI);
+    cr.arc(x + r, y + r, r, Math.PI, Math.PI * 1.5);
+    cr.closePath();
+}
+
+// A wheel or click gesture's mouse in an arrow's square: its outline faint
+// and the part the gesture uses solid, a button or the wheel. A wheel's
+// arrow follows it, close.
+function mouseMark(mouse, size, [r, g, b, a], arrow) {
+    const area = new St.DrawingArea({
+        y_align: Clutter.ActorAlign.CENTER,
+        style: `width: ${size}px; height: ${size}px;`,
+    });
+    area.connect('repaint', () => {
+        const cr = area.get_context();
+        const [w] = area.get_surface_size();
+        cr.scale(w, w);
+        cr.setLineCap(Cairo.LineCap.ROUND);
+        cr.setLineJoin(Cairo.LineJoin.ROUND);
+        // The body, and the line under its buttons.
+        const [x0, y0, bw, bh, br, buttons] = [0.2, 0.04, 0.6, 0.92, 0.24, 0.42];
+        roundedRect(cr, x0, y0, bw, bh, br);
+        cr.moveTo(x0, buttons);
+        cr.lineTo(x0 + bw, buttons);
+        cr.moveTo(0.5, y0);
+        cr.lineTo(0.5, buttons);
+        cr.setSourceRGBA(r, g, b, a * 0.6);
+        cr.setLineWidth(0.08);
+        cr.stroke();
+        if (mouse in WHEEL) {
+            roundedRect(cr, 0.43, 0.12, 0.14, 0.22, 0.07);
+        } else {
+            // The left button; the right one is its mirror image.
+            if (mouse === 'click right') {
+                cr.translate(1, 0);
+                cr.scale(-1, 1);
+            }
+            cr.moveTo(0.5, y0);
+            cr.arcNegative(x0 + br, y0 + br, br, Math.PI * 1.5, Math.PI);
+            cr.lineTo(x0, buttons);
+            cr.lineTo(0.5, buttons);
+            cr.closePath();
+        }
+        cr.setSourceRGBA(r, g, b, a);
+        cr.fill();
+        cr.$dispose();
+    });
+    const box = new St.BoxLayout();
+    box.add_child(area);
+    if (mouse in WHEEL) {
+        box.add_child(new St.Label({
+            text: ARROWS[WHEEL[mouse]],
+            y_align: Clutter.ActorAlign.CENTER,
+            style: `color: ${arrow}; font-size: ${size}px; margin-left: ${-size * 0.25}px;`,
+        }));
+    }
+    return box;
+}
+
+// How many arrow squares a row's mark takes.
+const squares = row => row.mouse
+    ? (row.mouse in WHEEL ? 1.75 : 1)
+    : [...row.arrows].filter(c => c !== ' ').length;
+
 export class Hint {
     constructor() {
         this._style = DEFAULT_STYLE;
@@ -66,8 +139,10 @@ export class Hint {
         this._style = {...DEFAULT_STYLE, ...style};
     }
 
-    // `hint`: {stroke, label, shape: [[x, y]] | null, state: 'drawing' | 'fired' | 'missed',
-    // next: [[rest, label]]}. `shape` is the outline of a shape that fired.
+    // `hint`: {stroke, label, shape: [[x, y]] | null, mouse: string | null, count,
+    // state: 'drawing' | 'fired' | 'missed', next: [[rest, label, mouse | null]]}.
+    // `shape` is the outline of a shape that fired, `mouse` the wheel or click
+    // ('wheel up', 'click left'...), and `count` how many times in a row it fired.
     show(hint) {
         const s = this._style;
         if (!s.enabled)
@@ -79,20 +154,30 @@ export class Hint {
             fired: [css(s.glyph), css(s.text), hint.label],
             missed: [css(s.failed), css(s.failed), hint.label],
         }[hint.state];
-        const main = hint.stroke || label
-            ? {arrows: arrows(hint.stroke), shape: hint.shape, label, size: s.size, arrow, text}
+        // The main line is only the stroke so far; the rest is listed beside it.
+        const main = hint.stroke || hint.shape || hint.mouse
+            ? {arrows: arrows(hint.stroke), shape: hint.shape, mouse: hint.mouse, size: s.size, glyph: s.glyph, arrow}
             : null;
-        const next = hint.next.map(([rest, l]) => ({
-            arrows: arrows(rest), label: l, size: s.size * 0.82,
-            arrow: css(s.glyph, 0.85), text: css(s.text, 0.7), next: true,
+        // The gesture's name, next to the main line. A miss has one only
+        // when it was cancelled.
+        const name = label
+            ? {
+                arrows: '', label, count: hint.count > 1 ? `${hint.count}×` : null,
+                size: s.nextSize, arrow, text, listed: true,
+            }
+            : null;
+        const next = hint.next.map(([rest, l, mouse]) => ({
+            arrows: arrows(rest), mouse, label: l, size: s.nextSize,
+            glyph: [...s.glyph.slice(0, 3), s.glyph[3] * 0.85],
+            arrow: css(s.glyph, 0.85), text: css(s.nextText), listed: true,
         }));
         // At the bottom of the screen there's no room under the main line.
         const above = s.vertical === 'end';
-        const rows = above ? [...next, main] : [main, ...next];
-        if (!main && next.length === 0)
+        const rows = above ? [...next, name, main] : [main, name, ...next];
+        if (!main && !name && next.length === 0)
             return;
-        // Next moves line their labels up after the longest stroke.
-        const column = Math.max(0, ...next.map(r => [...r.arrows].filter(c => c !== ' ').length)) * s.size * 0.82 * 1.05;
+        // Listed labels line up after the longest of their strokes.
+        const column = Math.max(0, ...next.map(squares)) * s.nextSize * 1.05;
 
         this._box = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
@@ -102,21 +187,26 @@ export class Hint {
         });
         this._main = null;
         rows.filter(Boolean).forEach((row, i, shown) => {
-            // A gap between the main line and the next moves.
-            const after = i > 0 && row.next !== shown[i - 1].next;
+            // A gap between the main line and the list.
+            const after = i > 0 && !!row.listed !== !!shown[i - 1].listed;
             const line = new St.BoxLayout({
                 style: `spacing: ${row.size * 0.45}px;` + (after ? ` margin-top: ${s.size * 0.35}px;` : ''),
             });
-            if (!row.next)
+            if (!row.listed)
                 this._main = line;
             // Only a fired hint has a shape, so it's in the glyph color.
             if (row.shape) {
                 line.add_child(shapeArea(row.shape, row.size, s.glyph));
-            } else if (row.arrows || row.next) {
+            } else if (row.mouse) {
+                const mark = mouseMark(row.mouse, row.size, row.glyph, row.arrow);
+                if (row.listed)
+                    mark.style = `min-width: ${column}px;`;
+                line.add_child(mark);
+            } else if (row.arrows || (row.listed && column > 0)) {
                 line.add_child(new St.Label({
                     text: row.arrows,
                     y_align: Clutter.ActorAlign.CENTER,
-                    style: `color: ${row.arrow}; font-size: ${row.size}px;` + (row.next ? ` min-width: ${column}px;` : ''),
+                    style: `color: ${row.arrow}; font-size: ${row.size}px;` + (row.listed ? ` min-width: ${column}px;` : ''),
                 }));
             }
             if (row.label) {
@@ -124,6 +214,14 @@ export class Hint {
                     text: row.label,
                     y_align: Clutter.ActorAlign.CENTER,
                     style: `color: ${row.text}; font-size: ${row.size}px;`,
+                }));
+            }
+            // In the arrows' color, so it reads as part of the gesture.
+            if (row.count) {
+                line.add_child(new St.Label({
+                    text: row.count,
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `color: ${row.arrow}; font-size: ${row.size}px;`,
                 }));
             }
             this._box.add_child(line);
