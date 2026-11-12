@@ -336,18 +336,21 @@ pub fn path() -> anyhow::Result<std::ffi::OsString> {
 }
 
 /// Runs a shell command, waiting for it only if `wait`. It sees the window
-/// in `MOUSEWAND_CLASS` and `MOUSEWAND_TITLE`, and mousewand's directory in
+/// in `MOUSEWAND_CLASS` and `MOUSEWAND_TITLE`, the selected text in
+/// `MOUSEWAND_SELECTION` if it mentions it, and mousewand's directory in
 /// `PATH`. A command that isn't installed gets a notification, since a
 /// gesture that does nothing looks like mousewand's fault.
 fn spawn(command: &str, window: &Window, wait: bool) -> anyhow::Result<()> {
-    let mut child = Command::new("sh")
-        .args(["-c", command])
+    let mut sh = Command::new("sh");
+    sh.args(["-c", command])
         .env("PATH", path()?)
         .env("MOUSEWAND_CLASS", &window.class)
         .env("MOUSEWAND_TITLE", &window.title)
-        .stdin(Stdio::null())
-        .spawn()
-        .with_context(|| format!("running {command:?}"))?;
+        .stdin(Stdio::null());
+    if command.contains("MOUSEWAND_SELECTION") {
+        sh.env("MOUSEWAND_SELECTION", selection());
+    }
+    let mut child = sh.spawn().with_context(|| format!("running {command:?}"))?;
     if wait {
         let start = Instant::now();
         while start.elapsed() < STEP_TIMEOUT {
@@ -364,6 +367,51 @@ fn spawn(command: &str, window: &Window, wait: bool) -> anyhow::Result<()> {
     reap(child, command.to_owned());
     Ok(())
 }
+
+/// The text selected last, in any window: the primary selection, which
+/// selecting text sets without copying it. Empty if there's none, or if
+/// the app holding it doesn't answer within [`SELECTION_TIMEOUT`].
+fn selection() -> String {
+    let (program, args): (&str, &[&str]) = match std::env::var_os("WAYLAND_DISPLAY") {
+        Some(_) => ("wl-paste", &["--primary", "--no-newline"]),
+        None => ("xclip", &["-o", "-selection", "primary"]),
+    };
+    let child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn();
+    let child = match child {
+        Ok(child) => child,
+        Err(e) => {
+            log::warn!("can't read the selection with {program}: {e}");
+            return String::new();
+        }
+    };
+    // Read on a thread, so a long selection can't fill the pipe and stall.
+    let pid = child.id();
+    let (tx, rx) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let _ = tx.send(child.wait_with_output());
+    });
+    match rx.recv_timeout(SELECTION_TIMEOUT) {
+        Ok(Ok(out)) => String::from_utf8_lossy(&out.stdout).into_owned(),
+        Ok(Err(e)) => {
+            log::warn!("can't read the selection with {program}: {e}");
+            String::new()
+        }
+        Err(_) => {
+            log::warn!("{program} took too long to read the selection");
+            // SAFETY: kill only sends a signal; the reader thread reaps it.
+            unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+            String::new()
+        }
+    }
+}
+
+/// How long the app holding the selection gets to hand it over.
+const SELECTION_TIMEOUT: Duration = Duration::from_millis(300);
 
 /// Waits for the command in the background, to tell if it wasn't found.
 fn reap(mut child: Child, command: String) {

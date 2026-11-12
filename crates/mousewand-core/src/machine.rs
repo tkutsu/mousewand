@@ -323,7 +323,10 @@ mod tests {
 
     #[test]
     fn holding_still_mid_gesture_says_so_once() {
-        let mut m = machine();
+        let mut m = Machine::new(&Settings {
+            cancel_ms: 700,
+            ..Settings::default()
+        });
         m.press(ms(0));
         m.motion(-40.0, 0.0, ms(10));
         assert_eq!(m.deadline(), Some(ms(710)));
