@@ -45,8 +45,8 @@ export default function HintSettings({ hint, onChange }: { hint: Hint; onChange:
   const chosen = STYLES.find(([, look]) => (Object.keys(look) as (keyof Look)[]).every((k) => look[k] === hint[k]));
 
   /** A color picker that keeps the color's alpha. */
-  const color = (key: "text" | "glyph" | "failed" | "background", label: string) => (
-    <label className="flex items-center gap-1.5 text-[12px] text-ink-2">
+  const color = (key: "text" | "glyph" | "failed" | "background", label: string, title: string) => (
+    <label className="flex items-center gap-1.5 text-[12px] text-ink-2" title={title}>
       <input
         type="color"
         className="h-6 w-8 cursor-pointer rounded border border-line bg-control p-0.5"
@@ -80,7 +80,7 @@ export default function HintSettings({ hint, onChange }: { hint: Hint; onChange:
               <button
                 key={name}
                 type="button"
-                title={name}
+                title={`Use the ${name} look`}
                 className={`flex h-7 items-center gap-1.5 rounded-md border px-2 text-[12px] font-medium ${
                   chosen?.[0] === name ? "border-accent ring-[3px] ring-accent/25" : "border-line"
                 }`}
@@ -94,10 +94,10 @@ export default function HintSettings({ hint, onChange }: { hint: Hint; onChange:
           </div>
         </Row>
         <Row label="Colors">
-          {color("text", "Text")}
-          {color("glyph", "Arrows")}
-          {color("failed", "Failed")}
-          {color("background", "Background")}
+          {color("text", "Text", "What the gesture does")}
+          {color("glyph", "Arrows", "The stroke so far")}
+          {color("failed", "Failed", "The arrows when nothing matches")}
+          {color("background", "Background", "Behind it all; its see-through part is kept")}
         </Row>
         <Row label="Position" hint="Where on the screen it shows">
           <div className="grid grid-cols-3 gap-0.5 rounded-md border border-line bg-ink/[0.04] p-0.5">
@@ -125,6 +125,7 @@ export default function HintSettings({ hint, onChange }: { hint: Hint; onChange:
             className="field w-20 text-right"
             type="number"
             min={8}
+            title="Text size"
             value={hint.size}
             onChange={(e) => set({ size: Number(e.target.value) })}
           />
@@ -135,6 +136,7 @@ export default function HintSettings({ hint, onChange }: { hint: Hint; onChange:
             className="field w-20 text-right"
             type="number"
             min={0}
+            title="0 for square corners"
             value={hint.radius}
             onChange={(e) => set({ radius: Number(e.target.value) })}
           />

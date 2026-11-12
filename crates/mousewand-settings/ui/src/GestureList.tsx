@@ -100,6 +100,7 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
       <Line label="When">
         <select
           className="field"
+          title={INPUT_TIPS[g.input]}
           value={g.input}
           onChange={(e) => {
             const input = e.target.value as Gesture["input"];
@@ -126,8 +127,24 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
             onDraw={() => setDrawing(true)}
           />
         )}
+        {canHoldKeys && (
+          <Toggles
+            values={held}
+            options={MODIFIERS.map((m) => ({ key: m.key, label: m.label, title: `Only while ${m.label} is held` }))}
+            onChange={(keys) => {
+              // Combos name them in a set order: ctrl, shift, alt, super.
+              const ordered = MODIFIERS.map((m) => m.key).filter((k) => keys.includes(k));
+              onChange({ with: ordered.length ? ordered.join("+") : null });
+            }}
+          />
+        )}
         {g.input === "wheel" && (
-          <select className="field" value={g.value} onChange={(e) => onChange({ value: e.target.value })}>
+          <select
+            className="field"
+            title="Which way the wheel turns"
+            value={g.value}
+            onChange={(e) => onChange({ value: e.target.value })}
+          >
             <option value="up">Up</option>
             <option value="down">Down</option>
             <option value="left">Left</option>
@@ -135,7 +152,12 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
           </select>
         )}
         {g.input === "click" && (
-          <select className="field" value={g.value} onChange={(e) => onChange({ value: e.target.value })}>
+          <select
+            className="field"
+            title="The button to click while holding the trigger"
+            value={g.value}
+            onChange={(e) => onChange({ value: e.target.value })}
+          >
             <option value="left">Left</option>
             <option value="right">Right</option>
           </select>
@@ -143,6 +165,7 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
         {g.input === "stroke" && (
           <select
             className="field"
+            title={KIND_TIPS[g.kind]}
             value={g.kind}
             onChange={(e) => {
               const kind = e.target.value as Gesture["kind"];
@@ -160,7 +183,7 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
           </select>
         )}
         {continuous && (
-          <span className="flex items-center gap-1.5 text-ink-2">
+          <span className="flex items-center gap-1.5 text-ink-2" title="Fires again each time you move this far">
             every
             <input
               className="field w-14 text-right"
@@ -170,20 +193,6 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
               onChange={(e) => onChange({ step: Number(e.target.value) || null })}
             />
             px
-          </span>
-        )}
-        {canHoldKeys && (
-          <span className="ml-auto flex items-center gap-2" title="Only while these keys are held on the keyboard">
-            <span className="text-[12px] text-ink-3">holding</span>
-            <Toggles
-              values={held}
-              options={MODIFIERS.map((m) => ({ key: m.key, label: m.label }))}
-              onChange={(keys) => {
-                // Combos name them in a set order: ctrl, shift, alt, super.
-                const ordered = MODIFIERS.map((m) => m.key).filter((k) => keys.includes(k));
-                onChange({ with: ordered.length ? ordered.join("+") : null });
-              }}
-            />
           </span>
         )}
       </Line>
@@ -198,7 +207,7 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
 
       {g.input === "stroke" && g.kind === "hold" && (
         <Line label="Hold">
-          <div className="w-56">
+          <div className="w-56" title="Held down until you let go of the trigger">
             <KeysInput value={g.hold ?? ""} onChange={(hold) => onChange({ hold })} />
           </div>
         </Line>
@@ -278,6 +287,7 @@ function StepEditor({
     <>
       <select
         className="field w-36"
+        title={STEP_TIPS[step.action]}
         value={step.action}
         onChange={(e) => {
           const [kind, group, index] = e.target.value.split(":");
@@ -312,6 +322,7 @@ function StepEditor({
         {(step.action === "command" || step.action === "dispatch") && (
           <input
             className="field w-full font-mono"
+            title={step.action === "command" ? "Runs in a shell" : "Sent to your compositor as is"}
             value={step.target}
             placeholder={step.action === "command" ? "notify-send hi" : "workspace e+1"}
             onChange={(e) => onChange({ ...step, target: e.target.value })}
@@ -323,6 +334,7 @@ function StepEditor({
               className="field w-20 text-right"
               type="number"
               min={10}
+              title="A pause before the next step"
               value={step.target}
               onChange={(e) => onChange({ ...step, target: e.target.value })}
             />
@@ -333,6 +345,26 @@ function StepEditor({
     </>
   );
 }
+
+const INPUT_TIPS: Record<Gesture["input"], string> = {
+  stroke: "Directions you draw",
+  shape: "A shape you draw",
+  wheel: "The wheel, while holding the trigger",
+  click: "A click, while holding the trigger",
+};
+
+const KIND_TIPS: Record<Gesture["kind"], string> = {
+  oneshot: "Fires once, when you let go",
+  repeat: "Fires as you go, and again as you keep moving",
+  hold: "Like Repeats, holding keys down until you let go: for alt-tab",
+};
+
+const STEP_TIPS: Record<Step["action"], string> = {
+  keys: "Presses a keyboard shortcut",
+  command: "Runs a shell command",
+  dispatch: "Sends a command to your compositor",
+  wait: "Pauses before the next step",
+};
 
 /** One line of a gesture: a quiet word, then its controls. */
 function Line({ label, children }: { label: string; children: ReactNode }) {
@@ -401,6 +433,7 @@ export function KeysInput({ value, onChange }: { value: string; onChange: (combo
     <div className="flex w-full gap-1.5">
       <input
         className="field w-full min-w-28 font-mono"
+        title="Type a combo, or record one"
         value={recording ? "" : value}
         placeholder={recording ? "Press a shortcut… (Esc cancels)" : "ctrl+shift+t"}
         readOnly={recording}
@@ -408,6 +441,7 @@ export function KeysInput({ value, onChange }: { value: string; onChange: (combo
       />
       <button
         className={`button ${recording ? "recording" : ""}`}
+        title="Press the shortcut to fill it in"
         onClick={(e) => {
           e.preventDefault();
           setRecording(!recording);
