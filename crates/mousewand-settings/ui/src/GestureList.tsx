@@ -242,19 +242,14 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
         </Line>
       ))}
       {g.kind !== "hold" && (
-        <div
-          className={`pl-[4.5rem] ${
-            g.steps.length > 1 ? "" : "-my-1 hidden group-focus-within:block group-hover:block"
-          }`}
+        // In the labels' column, under the last step.
+        <button
+          className="button plain -my-1 -ml-1.5 h-6 w-fit justify-start px-1.5 text-[12px] text-accent"
+          title="Do something else after this, in turn"
+          onClick={() => onChange({ steps: [...g.steps, newStep()] })}
         >
-          <button
-            className="button plain -ml-2 h-6 px-2 text-[12px] text-accent"
-            title="Do something else after this, in turn"
-            onClick={() => onChange({ steps: [...g.steps, newStep()] })}
-          >
-            + Add Step
-          </button>
-        </div>
+          + Add Step
+        </button>
       )}
 
       {problem && (
