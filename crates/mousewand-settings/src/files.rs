@@ -810,7 +810,10 @@ mod tests {
         assert_eq!(names.len(), mousewand_core::shape::BUILT_IN.len() + 1);
         assert_eq!(names[0], ("circle", true));
         assert_eq!(names.last(), Some(&("my_triangle", false)));
-        assert_eq!(shapes.last().unwrap().outline.len(), 32);
+        assert_eq!(
+            shapes.last().unwrap().outline,
+            [[0.0, 0.0], [100.0, 0.0], [50.0, 90.0], [0.0, 0.0]]
+        );
 
         let gesture = Gesture {
             input: "shape".into(),

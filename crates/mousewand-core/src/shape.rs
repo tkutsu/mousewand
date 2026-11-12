@@ -31,6 +31,8 @@ const THRESHOLD: f64 = 0.25;
 pub struct Shape {
     pub name: String,
     examples: Arc<[Cloud]>,
+    /// The first example as drawn, to show.
+    outline: Arc<[Point]>,
 }
 
 /// Shapes are told apart by name.
@@ -107,6 +109,7 @@ impl Shape {
         Shape {
             name: name.into(),
             examples: Arc::new([]),
+            outline: Arc::new([]),
         }
     }
 
@@ -114,20 +117,21 @@ impl Shape {
         if examples.is_empty() {
             return Err("a shape needs at least one example".into());
         }
-        let examples = examples
+        let clouds = examples
             .iter()
             .map(|e| Cloud::of(e).ok_or("an example is too small to be a shape"))
             .collect::<Result<_, _>>()?;
         Ok(Shape {
             name: name.into(),
-            examples,
+            examples: clouds,
+            outline: examples[0].as_slice().into(),
         })
     }
 
-    /// The first example as it's compared: points in drawing order,
-    /// centred, evened out and about 1 across. Enough to draw a thumbnail.
+    /// The first example as drawn, in drawing order and at any scale: fit it
+    /// to its bounds to draw a thumbnail.
     pub fn outline(&self) -> &[Point] {
-        self.examples.first().map_or(&[], |e| &e.0)
+        &self.outline
     }
 
     /// How far `drawing` is from the closest example.
@@ -437,7 +441,7 @@ mod tests {
             &[round(100.0)],
             &polyline(&[(0.0, 0.0), (0.0, 200.0), (150.0, 200.0)])
         ));
-        assert_eq!(shapes[0].outline().len(), N);
+        assert_eq!(shapes[1].outline(), [(0.0, 0.0), (100.0, 0.0), (50.0, 90.0), (0.0, 0.0)]);
 
         assert!(Shape::parse("x", "examples = []").unwrap_err().contains("at least one"));
         assert!(
