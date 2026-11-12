@@ -18,11 +18,11 @@ stroke = "UD"
 name = "Say hello"
 action = { command = "notify-send mousewand \"gesture over $MOUSEWAND_CLASS\"" }
 
-# $MOUSEWAND_SELECTION is the text you last selected, in any window.
+# $SELECTION is the text you last selected, in any window.
 [[gesture]]
 stroke = "UR"
 name = "Search the web for the selection"
-action = { command = 'xdg-open "https://duckduckgo.com/?q=$(printf %s "$MOUSEWAND_SELECTION" | jq -sRr @uri)"' }
+action = { command = 'xdg-open "https://duckduckgo.com/?q=$(printf %s "$SELECTION" | jq -sRr @uri)"' }
 
 # With a modifier held on the keyboard, the same stroke can do something
 # else. It needs dist/71-mousewand-keyboard.rules; see the README.
@@ -30,7 +30,7 @@ action = { command = 'xdg-open "https://duckduckgo.com/?q=$(printf %s "$MOUSEWAN
 # stroke = "UR"
 # with = "shift"
 # name = "Open the selection as a link"
-# action = { command = 'xdg-open "$MOUSEWAND_SELECTION"' }
+# action = { command = 'xdg-open "$SELECTION"' }
 
 
 # Trigger + wheel: volume.

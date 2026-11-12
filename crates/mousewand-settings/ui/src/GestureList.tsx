@@ -67,6 +67,10 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
   // gestures that fire on release can use them.
   const canHoldKeys = (g.input === "stroke" || g.input === "shape") && !continuous;
   const held = g.with ? g.with.split("+") : [];
+  // A repeating gesture that presses keys can keep modifiers down until
+  // release, as alt-tab needs. It's `hold` in the action.
+  const canKeepDown = continuous && g.steps.length === 1 && g.steps[0].action === "keys";
+  const kept = g.hold ? g.hold.split("+") : [];
 
   const setStep = (i: number, step: Step) => onChange({ steps: g.steps.map((s, j) => (j === i ? step : s)) });
   const pickReadyMade = (i: number, group: number, index: number) => {
@@ -97,7 +101,7 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
         </button>
       </div>
 
-      <Line label="When">
+      <Line label="When" nowrap>
         <select
           className="field"
           title={INPUT_TIPS[g.input]}
@@ -165,21 +169,14 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
         {g.input === "stroke" && (
           <select
             className="field"
-            title={KIND_TIPS[g.kind]}
-            value={g.kind}
-            onChange={(e) => {
-              const kind = e.target.value as Gesture["kind"];
-              onChange({
-                kind,
-                hold: kind === "hold" ? (g.hold ?? "alt") : null,
-                with: kind === "oneshot" ? g.with : null,
-                steps: kind === "hold" ? [g.steps.find((s) => s.action === "keys") ?? newStep()] : g.steps,
-              });
-            }}
+            title={continuous ? "Fires as you go, and again as you keep moving" : "Fires once, when you let go"}
+            value={continuous ? "repeat" : "oneshot"}
+            onChange={(e) =>
+              onChange(e.target.value === "repeat" ? { kind: "repeat", with: null } : { kind: "oneshot", hold: null })
+            }
           >
-            <option value="oneshot">Fires on Release</option>
+            <option value="oneshot">On Release</option>
             <option value="repeat">Repeats</option>
-            <option value="hold">Repeats, Holding Keys</option>
           </select>
         )}
         {continuous && (
@@ -205,14 +202,6 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
         </div>
       )}
 
-      {g.input === "stroke" && g.kind === "hold" && (
-        <Line label="Hold">
-          <div className="w-56" title="Held down until you let go of the trigger">
-            <KeysInput value={g.hold ?? ""} onChange={(hold) => onChange({ hold })} />
-          </div>
-        </Line>
-      )}
-
       {g.steps.map((step, i) => (
         <Line key={i} label={i === 0 ? "Do" : "Then"}>
           <StepEditor
@@ -222,6 +211,25 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
             onChange={(next) => setStep(i, next)}
             onReadyMade={(group, index) => pickReadyMade(i, group, index)}
           />
+          {canKeepDown && (
+            <span className="flex items-center gap-2">
+              <span className="text-[12px] text-ink-3">keep down</span>
+              <Toggles
+                values={kept}
+                options={MODIFIERS.map((m) => ({
+                  key: m.key,
+                  label: m.label,
+                  title: `Keeps ${m.label} down until you let go, like alt-tab`,
+                }))}
+                onChange={(keys) => {
+                  const ordered = MODIFIERS.map((m) => m.key).filter((k) => keys.includes(k));
+                  // Keys other than modifiers, from a hand-written config, stay.
+                  const hold = [...ordered, ...kept.filter((k) => !MODIFIERS.some((m) => m.key === k))];
+                  onChange(hold.length ? { kind: "hold", hold: hold.join("+") } : { kind: "repeat", hold: null });
+                }}
+              />
+            </span>
+          )}
           {g.steps.length > 1 && (
             <button
               className="button plain w-7 px-0 text-ink-3 hover:text-danger"
@@ -353,12 +361,6 @@ const INPUT_TIPS: Record<Gesture["input"], string> = {
   click: "A click, while holding the trigger",
 };
 
-const KIND_TIPS: Record<Gesture["kind"], string> = {
-  oneshot: "Fires once, when you let go",
-  repeat: "Fires as you go, and again as you keep moving",
-  hold: "Like Repeats, holding keys down until you let go: for alt-tab",
-};
-
 const STEP_TIPS: Record<Step["action"], string> = {
   keys: "Presses a keyboard shortcut",
   command: "Runs a shell command",
@@ -366,12 +368,12 @@ const STEP_TIPS: Record<Step["action"], string> = {
   wait: "Pauses before the next step",
 };
 
-/** One line of a gesture: a quiet word, then its controls. */
-function Line({ label, children }: { label: string; children: ReactNode }) {
+/** One line of a gesture: a quiet word, then its controls, wrapping unless `nowrap`. */
+function Line({ label, nowrap, children }: { label: string; nowrap?: boolean; children: ReactNode }) {
   return (
     <div className="flex items-center gap-2">
       <span className="w-16 shrink-0 text-[12px] text-ink-2">{label}</span>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{children}</div>
+      <div className={`flex min-w-0 flex-1 items-center gap-2 ${nowrap ? "" : "flex-wrap"}`}>{children}</div>
     </div>
   );
 }

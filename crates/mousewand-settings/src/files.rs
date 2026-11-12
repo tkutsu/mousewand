@@ -135,7 +135,7 @@ pub struct State {
     pub app: Option<App>,
     /// The gestures over this app's own window.
     pub settings_app: App,
-    pub themes: Vec<String>,
+    pub themes: Vec<ThemeInfo>,
     /// The built-in shapes, then the drawn ones.
     pub shapes: Vec<ShapeInfo>,
     pub presets: Vec<Preset>,
@@ -150,6 +150,16 @@ impl App {
             gestures: Vec::new(),
         }
     }
+}
+
+/// A trail theme as the theme picker previews it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ThemeInfo {
+    pub name: String,
+    /// sRGB, 0–1, head to tail. Empty if its file has an error.
+    pub colors: Vec<[f32; 3]>,
+    pub width: f32,
+    pub glow: f32,
 }
 
 /// A shape as the shapes list shows it.
@@ -306,20 +316,41 @@ impl Dir {
     }
 
     /// "default", then the built-in themes and the files, by name.
-    fn themes(&self) -> Vec<String> {
-        let mut themes: Vec<String> = BUILT_IN_THEMES.iter().map(|(name, _)| name.to_string()).collect();
+    fn themes(&self) -> Vec<ThemeInfo> {
+        let mut names: Vec<String> = BUILT_IN_THEMES.iter().map(|(name, _)| name.to_string()).collect();
         if let Ok(entries) = std::fs::read_dir(self.0.join("themes")) {
             for path in entries.filter_map(|e| Some(e.ok()?.path())) {
                 if path.extension().is_some_and(|ext| ext == "toml") {
-                    themes.push(path.file_stem().unwrap_or_default().to_string_lossy().into_owned());
+                    names.push(path.file_stem().unwrap_or_default().to_string_lossy().into_owned());
                 }
             }
         }
-        themes.retain(|t| t != "default");
-        themes.sort();
-        themes.dedup();
-        themes.insert(0, "default".to_string());
-        themes
+        names.retain(|t| t != "default");
+        names.sort();
+        names.dedup();
+        names.insert(0, "default".to_string());
+        names
+            .into_iter()
+            .map(|name| {
+                let theme = self.theme(&name).ok();
+                ThemeInfo {
+                    colors: theme.as_ref().map_or(Vec::new(), |t| t.color.0.iter().map(|c| c.0).collect()),
+                    width: theme.as_ref().map_or(0.0, |t| t.width),
+                    glow: theme.as_ref().map_or(0.0, |t| t.glow),
+                    name,
+                }
+            })
+            .collect()
+    }
+
+    /// `themes/<name>.toml`, else the built-in theme, as the daemon reads it.
+    fn theme(&self, name: &str) -> Result<Theme, String> {
+        let path = self.0.join("themes").join(format!("{name}.toml"));
+        let text = match std::fs::read_to_string(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            other => Some(other.map_err(|e| format!("reading {}: {e}", path.display()))?),
+        };
+        Theme::load(name, text.as_deref())
     }
 
     /// Writes the edits if the whole config, as the daemon would read it,
@@ -341,13 +372,7 @@ impl Dir {
             writes.push((path, text));
         }
         let config = Config::parse(&main, &apps, &toml_files(&self.0.join("shapes"))?)?;
-        let name = &config.settings.theme;
-        let path = self.0.join("themes").join(format!("{name}.toml"));
-        let text = match std::fs::read_to_string(&path) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            other => Some(other.map_err(|e| format!("reading {}: {e}", path.display()))?),
-        };
-        Theme::load(name, text.as_deref())?;
+        self.theme(&config.settings.theme)?;
         write(&self.main_path(), &main)?;
         for (path, text) in writes {
             write(&path, &text)?;
