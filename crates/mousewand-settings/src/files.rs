@@ -664,8 +664,7 @@ mod tests {
         });
         let mut settings = state.settings.clone();
         settings.cancel_ms = 700;
-        dir.save(&settings, &[copy.clone()], std::slice::from_ref(&app))
-            .unwrap();
+        dir.save(&settings, &[copy.clone()], std::slice::from_ref(&app)).unwrap();
 
         let main = std::fs::read_to_string(path.join("config.toml")).unwrap();
         assert!(main.contains("with = \"shift\""), "{main}");

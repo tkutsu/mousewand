@@ -116,10 +116,7 @@ impl Daemon {
         self.input.set_paused(self.paused);
         log::info!("{}", if self.paused { "paused" } else { "resumed" });
         let (title, body) = match self.paused {
-            true => (
-                "mousewand paused",
-                "The trigger is an ordinary button until you resume.",
-            ),
+            true => ("mousewand paused", "The trigger is an ordinary button until you resume."),
             false => ("mousewand resumed", "Gestures work again."),
         };
         if let Err(e) = crate::notes::notify(title, body, false) {

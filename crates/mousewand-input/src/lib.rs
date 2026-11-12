@@ -246,6 +246,7 @@ impl<F: Fn(Output, Trigger)> Router<F> {
         }
     }
 
+
     /// Only the mouse that pressed the trigger can release it; a second
     /// mouse's trigger is ignored while the first is down.
     fn trigger(&mut self, id: DeviceId, code: u16, value: i32, now: Duration) -> Vec<Output> {
