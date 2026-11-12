@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use mousewand_core::config::{SETTINGS_CLASSES, toml_error};
 use mousewand_core::shape::Shape;
-use mousewand_core::{Config, Input, Theme};
+use mousewand_core::{Config, HintStyle, Input, Theme};
 use serde::{Deserialize, Serialize};
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, value};
 
@@ -57,6 +57,44 @@ pub struct Settings {
     pub theme: String,
     /// The stroke or shape that opens this app.
     pub open_settings: Drawn,
+    pub hint: Hint,
+}
+
+/// The `[hint]` keys the form edits. Others there, like `margin`, stay.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Hint {
+    pub enabled: bool,
+    pub next: bool,
+    /// Like "bottom center".
+    pub position: String,
+    pub font: String,
+    pub size: f64,
+    /// Colors as "#rrggbb" or "#rrggbbaa".
+    pub text: String,
+    pub glyph: String,
+    /// The arrows and text once the stroke matches nothing.
+    pub failed: String,
+    pub background: String,
+    pub radius: f64,
+}
+
+impl From<&HintStyle> for Hint {
+    fn from(style: &HintStyle) -> Hint {
+        // Through f32's shortest text, so 17 stays 17 and 0.9 isn't 0.899….
+        let float = |v: f32| v.to_string().parse().unwrap_or(v as f64);
+        Hint {
+            enabled: style.enabled,
+            next: style.next,
+            position: style.position.to_string(),
+            font: style.font.clone(),
+            size: float(style.size),
+            text: style.text.to_string(),
+            glyph: style.glyph.to_string(),
+            failed: style.failed.to_string(),
+            background: style.background.to_string(),
+            radius: float(style.radius),
+        }
+    }
 }
 
 /// A stroke or a shape, as `open_settings` takes one.
@@ -162,6 +200,7 @@ impl Dir {
                 input: open_settings.0.into(),
                 value: open_settings.1,
             },
+            hint: Hint::from(&config.hint),
         };
         let is_settings = |c: &str| SETTINGS_CLASSES.iter().any(|s| s.eq_ignore_ascii_case(c));
         let app = match class.filter(|c| !c.is_empty() && !is_settings(c)) {
@@ -456,8 +495,30 @@ fn edit_main(text: &str, settings: &Settings, global: &[Gesture]) -> Result<Stri
         table.insert(&open.input, open.value.as_str().into());
         doc["open_settings"] = Item::Value(table.into());
     }
+    let hint = &settings.hint;
+    if *hint != Hint::from(&HintStyle::default()) || doc.contains_key("hint") {
+        let table = &mut doc["hint"];
+        table["enabled"] = value(hint.enabled);
+        table["next"] = value(hint.next);
+        table["position"] = value(&hint.position);
+        table["font"] = value(&hint.font);
+        table["size"] = number(hint.size);
+        table["text"] = value(&hint.text);
+        table["glyph"] = value(&hint.glyph);
+        table["failed"] = value(&hint.failed);
+        table["background"] = value(&hint.background);
+        table["radius"] = number(hint.radius);
+    }
     set_gestures(&mut doc, global);
     Ok(doc.to_string())
+}
+
+/// A whole number without ".0", as someone would write it.
+fn number(n: f64) -> Item {
+    match n.fract() == 0.0 && n.abs() < 1e9 {
+        true => value(n as i64),
+        false => value(n),
+    }
 }
 
 fn edit_app(text: &str, app: &App) -> Result<String, String> {
@@ -782,6 +843,39 @@ mod tests {
         assert_eq!(again.settings.open_settings, settings.open_settings);
         assert_eq!(again.settings_app.gestures[0].steps[0].target, "ctrl+s");
         assert_eq!(again.settings_app.classes, SETTINGS_CLASSES);
+    }
+
+    #[test]
+    fn hint_round_trip() {
+        let (dir, path) = dir("hint");
+        let state = dir.load(None).unwrap();
+        assert!(!state.settings.hint.enabled);
+        assert_eq!(state.settings.hint.size, 17.0);
+        dir.save(&state.settings, &[], &[]).unwrap();
+        let main = std::fs::read_to_string(path.join("config.toml")).unwrap();
+        assert!(!main.contains("[hint]"), "the default isn't written: {main}");
+
+        std::fs::write(path.join("config.toml"), "[hint]\nmargin = 20 # mine\n").unwrap();
+        let mut settings = dir.load(None).unwrap().settings;
+        settings.hint = Hint {
+            enabled: true,
+            position: "top right".into(),
+            background: "#ffffffcc".into(),
+            failed: "#c0392b".into(),
+            radius: 6.0,
+            ..settings.hint
+        };
+        dir.save(&settings, &[keys("L", "a")], &[]).unwrap();
+        let main = std::fs::read_to_string(path.join("config.toml")).unwrap();
+        assert!(main.contains("margin = 20 # mine"), "{main}");
+        assert!(
+            main.contains("enabled = true") && main.contains("radius = 6\n"),
+            "{main}"
+        );
+        assert_eq!(dir.load(None).unwrap().settings.hint, settings.hint);
+
+        settings.hint.position = "sideways".into();
+        assert!(dir.save(&settings, &[], &[]).unwrap_err().contains("bad position"));
     }
 
     #[test]

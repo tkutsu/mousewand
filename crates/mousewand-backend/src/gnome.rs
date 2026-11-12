@@ -281,6 +281,7 @@ impl Trail for GnomeTrail {
             "size": style.size,
             "text": style.text.0,
             "glyph": style.glyph.0,
+            "failed": style.failed.0,
             "background": style.background.0,
             "opacity": style.opacity,
             "padding": style.padding,

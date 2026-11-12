@@ -37,7 +37,7 @@ export class Trail {
 
     showHint(hint) {
         if (this._area)
-            this.hint.show(hint, this._theme.rejected);
+            this.hint.show(hint);
     }
 
     setTheme(theme) {

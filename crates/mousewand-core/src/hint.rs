@@ -23,14 +23,15 @@ pub enum State {
     Drawing,
     /// Something fired; `label` says what.
     Fired,
-    /// The gesture ended without firing anything. `label` says why, if not
-    /// for want of a gesture.
+    /// Nothing fired, or mid-stroke, no stroke gesture is or starts with
+    /// the stroke so far. `label` is set only when the gesture was cancelled.
     Missed,
 }
 
 impl Hint {
     /// Mid-stroke, among `gestures`. `next` lists what the stroke could
-    /// still become.
+    /// still become. A stroke that can't become any stroke gesture is a
+    /// miss right away; a shape may still match it on release.
     pub fn drawing(gestures: &[Gesture], stroke: &Stroke, next: bool) -> Hint {
         let strokes = || {
             gestures.iter().filter_map(|g| match &g.input {
@@ -38,6 +39,9 @@ impl Hint {
                 _ => None,
             })
         };
+        if !stroke.0.is_empty() && !strokes().any(|(s, _)| s.0.starts_with(&stroke.0)) {
+            return Hint::missed(stroke);
+        }
         let label = strokes().find(|(s, _)| *s == stroke).map(|(_, g)| g.label());
         let mut next: Vec<(Stroke, String)> = match next {
             true => strokes()
@@ -139,6 +143,18 @@ mod tests {
         assert_eq!(hint.label, None);
         assert!(hint.next.is_empty());
         assert!(Hint::drawing(&gestures(), &s("D"), false).next.is_empty());
+    }
+
+    #[test]
+    fn a_dead_end_is_a_miss_right_away() {
+        assert_eq!(Hint::drawing(&gestures(), &s("L"), true).state, State::Missed);
+        assert_eq!(Hint::drawing(&gestures(), &s("DL"), false).state, State::Missed);
+        // Still on the way to DRU.
+        assert_eq!(Hint::drawing(&gestures(), &s("DR"), false).state, State::Drawing);
+        assert_eq!(
+            Hint::drawing(&gestures(), &Stroke::default(), true).state,
+            State::Drawing
+        );
     }
 
     #[test]

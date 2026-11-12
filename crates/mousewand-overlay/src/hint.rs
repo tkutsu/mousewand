@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use ab_glyph::{Font, FontVec, OutlineCurve, PxScale, ScaleFont};
 use mousewand_core::hint::{Hint, State};
-use mousewand_core::{Color, Dir, HintStyle, Rgba};
+use mousewand_core::{Align, Dir, HintStyle, Rgba};
 use tiny_skia::{FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Rect, Transform};
 
 /// Premultiplied RGBA pixels.
@@ -19,6 +19,9 @@ pub struct Image {
     pub width: u32,
     pub height: u32,
     pub pixels: Vec<u8>,
+    /// Where the main line's panel sits in the image, top and height: it's
+    /// what `place` puts in position, with the next moves hanging off it.
+    pub main: (f32, f32),
 }
 
 /// Paints hints, with the font for the current style.
@@ -35,71 +38,79 @@ struct Row<'a> {
     size: f32,
     arrow: [f32; 4],
     text: [f32; 4],
+    /// A possible next move, not the stroke so far.
+    next: bool,
+}
+
+/// Whether the next moves go above the main line: at the bottom of the
+/// screen there's no room under it.
+fn next_above(style: &HintStyle) -> bool {
+    style.position.vertical == Align::End
 }
 
 impl Painter {
     /// The hint at `scale` (physical pixels per logical one), or `None` if
     /// there's nothing to show.
-    pub fn paint(&mut self, hint: &Hint, style: &HintStyle, rejected: Color, scale: f32) -> Option<Image> {
+    pub fn paint(&mut self, hint: &Hint, style: &HintStyle, scale: f32) -> Option<Image> {
         let font = self.font(&style.font);
         let size = style.size * scale;
         let small = size * 0.82;
         let dim = |c: Rgba, f: f32| [c.0[0], c.0[1], c.0[2], c.0[3] * f];
-        let (arrow, text, label) = match hint.state {
-            State::Drawing => (style.glyph.0, dim(style.text, 0.75), hint.label.as_deref()),
-            State::Fired => (style.glyph.0, style.text.0, hint.label.as_deref()),
-            State::Missed => (
-                [rejected.0[0], rejected.0[1], rejected.0[2], 1.0],
-                dim(style.text, 0.6),
-                Some(hint.label.as_deref().unwrap_or("No gesture")),
-            ),
+        // A miss shows its arrows in the failed color.
+        let (arrow, text) = match hint.state {
+            State::Drawing => (style.glyph.0, dim(style.text, 0.75)),
+            State::Fired => (style.glyph.0, style.text.0),
+            State::Missed => (style.failed.0, style.failed.0),
         };
-        let mut rows = Vec::new();
-        if !hint.stroke.0.is_empty() || label.is_some() {
-            rows.push(Row {
-                arrows: &hint.stroke.0,
-                label,
-                size,
-                arrow,
-                text,
-            });
-        }
-        let first = rows.len();
-        for (rest, label) in &hint.next {
-            rows.push(Row {
-                arrows: &rest.0,
-                label: Some(label),
-                size: small,
-                arrow: dim(style.glyph, 0.85),
-                text: dim(style.text, 0.7),
-            });
-        }
+        // A miss has a label only when it was cancelled.
+        let label = hint.label.as_deref();
+        let main = (!hint.stroke.0.is_empty() || label.is_some()).then(|| Row {
+            arrows: &hint.stroke.0,
+            label,
+            size,
+            arrow,
+            text,
+            next: false,
+        });
+        let next = hint.next.iter().map(|(rest, label)| Row {
+            arrows: &rest.0,
+            label: Some(label),
+            size: small,
+            arrow: dim(style.glyph, 0.85),
+            text: dim(style.text, 0.7),
+            next: true,
+        });
+        let above = next_above(style);
+        let rows: Vec<Row> = match above {
+            true => next.chain(main).collect(),
+            false => main.into_iter().chain(next).collect(),
+        };
         if rows.is_empty() {
             return None;
         }
 
         // Next moves line their labels up after the longest stroke.
         let arrows_width = |row: &Row| row.arrows.len() as f32 * row.size * 1.05;
-        let next_arrows = rows[first..].iter().map(arrows_width).fold(0.0, f32::max);
+        let next_arrows = rows.iter().filter(|r| r.next).map(arrows_width).fold(0.0, f32::max);
         let gap = |row: &Row| if row.arrows.is_empty() { 0.0 } else { row.size * 0.45 };
         let widths: Vec<f32> = rows
             .iter()
-            .enumerate()
-            .map(|(i, row)| {
-                let arrows = if i >= first { next_arrows } else { arrows_width(row) };
+            .map(|row| {
+                let arrows = if row.next { next_arrows } else { arrows_width(row) };
                 let label = row.label.map_or(0.0, |l| gap(row) + text_width(font, l, row.size));
                 arrows + label
             })
             .collect();
         let pad = style.padding * scale;
         let line = |row: &Row| row.size * 1.45;
-        let spacing = if first > 0 && rows.len() > first {
-            size * 0.35
-        } else {
-            0.0
-        };
+        // Between the main line and the next moves, if there are both.
+        let mixed = rows.windows(2).any(|w| w[0].next != w[1].next);
+        let spacing = if mixed { size * 0.35 } else { 0.0 };
         let width = (widths.iter().fold(0.0, |a: f32, &b| a.max(b)) + pad * 2.0).ceil();
         let height = (rows.iter().map(line).sum::<f32>() + spacing + pad * 2.0).ceil();
+        // The panel the main line alone would make, at the end it's on.
+        let main_height = size * 1.45 + pad * 2.0;
+        let main_top = if above { height - main_height } else { 0.0 };
         let mut pixmap = Pixmap::new(width as u32, height as u32)?;
 
         let radius = (style.radius * scale).min(width / 2.0).min(height / 2.0);
@@ -114,7 +125,7 @@ impl Painter {
         }
         let mut y = pad;
         for (i, row) in rows.iter().enumerate() {
-            if i == first && i > 0 {
+            if i > 0 && row.next != rows[i - 1].next {
                 y += spacing;
             }
             let h = line(row);
@@ -123,7 +134,7 @@ impl Painter {
                 draw_arrow(&mut pixmap, dir, x, y + (h - row.size) / 2.0, row.size, row.arrow);
                 x += row.size * 1.05;
             }
-            if i >= first {
+            if row.next {
                 x = pad + next_arrows;
             }
             if let (Some(label), Some(font)) = (row.label, font) {
@@ -138,6 +149,7 @@ impl Painter {
             width: pixmap.width(),
             height: pixmap.height(),
             pixels: pixmap.take(),
+            main: (main_top, main_height),
         })
     }
 
@@ -308,18 +320,20 @@ fn px_scale(font: &FontVec, size: f32) -> PxScale {
     PxScale::from(size * height / em)
 }
 
-/// Where the hint's top-left corner goes on a `surface`-sized area.
-pub fn place(style: &HintStyle, image: (u32, u32), surface: (u32, u32), scale: f32) -> (f32, f32) {
-    use mousewand_core::Align;
+/// Where the hint's top-left corner goes on a `surface`-sized area. Its main
+/// line goes where `position` says, so it stays put while the next moves
+/// come and go.
+pub fn place(style: &HintStyle, image: &Image, surface: (u32, u32), scale: f32) -> (f32, f32) {
     let margin = style.margin * scale;
-    let at = |align: Align, size: u32, room: u32| match align {
+    let at = |align: Align, size: f32, room: u32| match align {
         Align::Start => margin,
-        Align::Center => (room as f32 - size as f32) / 2.0,
-        Align::End => room as f32 - size as f32 - margin,
+        Align::Center => (room as f32 - size) / 2.0,
+        Align::End => room as f32 - size - margin,
     };
+    let (main_top, main_height) = image.main;
     (
-        at(style.position.horizontal, image.0, surface.0).round(),
-        at(style.position.vertical, image.1, surface.1).round(),
+        at(style.position.horizontal, image.width as f32, surface.0).round(),
+        (at(style.position.vertical, main_height, surface.1) - main_top).round(),
     )
 }
 
@@ -352,19 +366,62 @@ mod tests {
         let stroke: Stroke = "D".parse().unwrap();
         let hint = Hint::drawing(&config.gestures, &stroke, true);
         let mut painter = Painter::default();
-        let image = painter
-            .paint(&hint, &config.hint, Color([1.0, 0.0, 0.0]), 1.0)
-            .expect("a hint");
+        let image = painter.paint(&hint, &config.hint, 1.0).expect("a hint");
         assert!(image.width > 40 && image.height > 40);
         // The corner is rounded off, the middle is filled.
         assert_eq!(image.pixels[3], 0);
         let mid = ((image.height / 2 * image.width + image.width / 2) * 4 + 3) as usize;
         assert!(image.pixels[mid] > 200);
-        let (x, y) = place(&config.hint, (image.width, image.height), (1000, 800), 1.0);
+        let (x, y) = place(&config.hint, &image, (1000, 800), 1.0);
         assert_eq!(x, ((1000 - image.width) as f32 / 2.0).round());
-        assert_eq!(y, (800 - image.height) as f32 - 64.0);
+        assert_eq!(
+            y,
+            (800 - image.height) as f32 - 64.0,
+            "at the bottom, next moves go above"
+        );
 
         let empty = Hint::drawing(&[], &Stroke::default(), true);
-        assert!(painter.paint(&empty, &config.hint, Color([1.0; 3]), 1.0).is_none());
+        assert!(painter.paint(&empty, &config.hint, 1.0).is_none());
+    }
+
+    #[test]
+    fn the_main_line_stays_put() {
+        let config = Config::parse(
+            "[[gesture]]\nstroke = \"D\"\naction = { keys = \"F5\" }\n\n\
+             [[gesture]]\nstroke = \"DR\"\naction = { keys = \"ctrl+w\" }",
+            &[],
+            &[],
+        )
+        .unwrap();
+        let mut painter = Painter::default();
+        let stroke: Stroke = "D".parse().unwrap();
+        let mut paint_at = |position: &str, next: bool| {
+            let style = HintStyle {
+                position: position.parse().unwrap(),
+                ..config.hint.clone()
+            };
+            let image = painter
+                .paint(&Hint::drawing(&config.gestures, &stroke, next), &style, 1.0)
+                .unwrap();
+            let (_, y) = place(&style, &image, (1000, 800), 1.0);
+            (y + image.main.0, image.height)
+        };
+        for position in ["top", "center", "bottom"] {
+            let (alone, short) = paint_at(position, false);
+            let (with_next, tall) = paint_at(position, true);
+            assert!(tall > short);
+            assert_eq!(alone, with_next, "{position}");
+        }
+    }
+
+    #[test]
+    fn a_miss_is_only_red_arrows() {
+        let style = HintStyle::default();
+        let stroke: Stroke = "LR".parse().unwrap();
+        let mut painter = Painter::default();
+        let missed = painter.paint(&Hint::missed(&stroke), &style, 1.0);
+        let fired = painter.paint(&Hint::fired(&stroke, "Something long".into()), &style, 1.0);
+        assert!(missed.unwrap().width < fired.unwrap().width, "no label on a miss");
+        assert!(painter.paint(&Hint::missed(&Stroke::default()), &style, 1.0).is_none());
     }
 }

@@ -5,6 +5,7 @@ import * as api from "./api";
 import ButtonInput from "./ButtonInput";
 import { problems, sentence } from "./check";
 import GestureList from "./GestureList";
+import HintSettings from "./HintSettings";
 import SettingsGestures from "./SettingsGestures";
 import Shapes from "./Shapes";
 import { Logo, Problem, Row, Section, Switch } from "./ui";
@@ -340,6 +341,7 @@ function GeneralPage({
           </select>
         </Row>
       </Section>
+      <HintSettings hint={settings.hint} onChange={(hint) => set({ hint })} />
     </>
   );
 }

@@ -69,16 +69,8 @@ export function Segmented<T extends string>({
   );
 }
 
-/** A macOS switch. */
-export function Switch({
-  on,
-  label,
-  onChange,
-}: {
-  on: boolean;
-  label: string;
-  onChange: (on: boolean) => void;
-}) {
+/** A macOS on/off switch. */
+export function Switch({ on, onChange, label }: { on: boolean; onChange: (on: boolean) => void; label: string }) {
   return (
     <button
       type="button"
@@ -89,7 +81,7 @@ export function Switch({
       onClick={() => onChange(!on)}
     >
       <span
-        className={`absolute top-[2px] left-[2px] size-[18px] rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.25)] transition-transform ${
+        className={`absolute top-[2px] left-[2px] size-[18px] rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.3)] transition-transform ${
           on ? "translate-x-4" : ""
         }`}
       />

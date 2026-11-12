@@ -1,7 +1,7 @@
 # ~/.config/mousewand/config.toml
 # Every setting is optional; these are the defaults.
 
-trigger = "middle"     # middle, back (mouse 4), forward (mouse 5); the settings app can detect it
+trigger = "middle"     # middle, right, back (mouse 4), forward (mouse 5); the settings app can detect it
 threshold = 8          # motion before a press becomes a gesture (≈ px)
 hold_ms = 300          # holding still this long makes it a normal press
 cancel_ms = 0          # holding still this long mid-stroke cancels it, e.g. 700; 0 never does
@@ -80,6 +80,7 @@ font = "sans-serif"          # any installed font family, e.g. "Inter"
 size = 17                    # text size, px; arrows match it
 text = "#f2f2f7"
 glyph = "#9ec4ff"            # the arrows
+failed = "#ff5959"           # arrows once the stroke matches nothing
 background = "#1c1e26"       # "#rrggbbaa" for a see-through background
 opacity = 0.9                # of the whole hint
 padding = 14
