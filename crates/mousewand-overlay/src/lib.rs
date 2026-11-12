@@ -44,6 +44,7 @@ pub const NAMESPACE: &str = "mousewand";
 
 enum Command {
     Begin { monitor: Option<String> },
+    Moved(f32, f32),
     Tick,
     End { matched: bool },
     Theme(Theme),
@@ -88,6 +89,10 @@ impl mousewand_core::Trail for Overlay {
     /// puts it if `None`.
     fn begin(&self, monitor: Option<String>) {
         let _ = self.tx.send(Command::Begin { monitor });
+    }
+
+    fn moved(&self, dx: f64, dy: f64) {
+        let _ = self.tx.send(Command::Moved(dx as f32, dy as f32));
     }
 
     fn tick(&self) {
@@ -202,6 +207,11 @@ impl State {
                 if let Some(active) = &mut self.active {
                     active.hint = Some(hint);
                     self.paint_hint();
+                }
+            }
+            Command::Moved(dx, dy) => {
+                if let Some(active) = &mut self.active {
+                    active.scene.moved(dx, dy);
                 }
             }
             Command::Tick => {
