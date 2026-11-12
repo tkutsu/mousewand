@@ -61,7 +61,6 @@ fn toggle() -> anyhow::Result<()> {
 }
 
 fn run() -> anyhow::Result<()> {
-
     // Exits cleanly, so a second start from autostart or systemd's
     // Restart=on-failure doesn't count as a failure.
     let Some(_instance) = instance::claim()? else {

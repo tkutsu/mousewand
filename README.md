@@ -202,7 +202,7 @@ hold_ms = 300        # holding still this long makes it a normal press
 cancel_ms = 0        # holding still this long mid-stroke cancels it, e.g. 700; 0 never does
 min_segment = 30     # shorter strokes are ignored as noise
 devices = []         # only use mice whose name contains one of these
-theme = "default"    # or a file in themes/, without .toml
+theme = "default"    # a built-in theme, or a file in themes/ without .toml
 open_settings = { shape = "circle" }   # or a stroke, like { stroke = "U39D" }
 ```
 
@@ -229,6 +229,8 @@ radius = 14
 
 ### Themes
 
+Built in: default, ember, fire, laser, mint, rainbow, sakura and sunset. To make your own, add a file to `themes/`. A file with a built-in name replaces that theme.
+
 ```toml
 # ~/.config/mousewand/themes/ember.toml
 color = "#ff8a3d"     # the trail
@@ -244,8 +246,6 @@ For a gradient, list colors from head to tail:
 ```toml
 color = ["#ffd36e", "#ff8a5c", "#e85d8a", "#7b4bb7"]
 ```
-
-The examples include ember, laser, sakura, mint, rainbow, sunset and fire.
 
 ### Using the selected text
 

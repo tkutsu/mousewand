@@ -333,7 +333,7 @@ function GeneralPage({
         </Row>
       </Section>
       <Section title="Trail">
-        <Row label="Theme" hint="Themes are files in themes/">
+        <Row label="Theme" hint="Add your own in themes/">
           <select className="field w-40" value={settings.theme} onChange={(e) => set({ theme: e.target.value })}>
             {themes.map((t) => (
               <option key={t}>{t}</option>
