@@ -67,10 +67,11 @@ export const appName = (app: App) =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 
-export type Preset = {
+/** An app's own shortcuts, offered first in its Do menu. */
+export type AppShortcuts = {
   name: string;
   classes: string[];
-  gestures: Gesture[];
+  shortcuts: { name: string; keys: string }[];
 };
 
 export type ShapeInfo = {
@@ -100,7 +101,7 @@ export type State = {
   themes: ThemeInfo[];
   /** The built-in shapes, then the drawn ones. */
   shapes: ShapeInfo[];
-  presets: Preset[];
+  appShortcuts: AppShortcuts[];
 };
 
 export const load = () => invoke<State>("load");
