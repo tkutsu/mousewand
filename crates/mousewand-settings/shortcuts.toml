@@ -1,0 +1,468 @@
+# Each app's own shortcuts, offered first in the Do menu of its tab in
+# mousewand-settings. All are the app's default keys.
+#
+# The common actions in ui/src/actions.ts follow these, so list only what
+# they don't already cover. A shortcut named like a common action replaces
+# it for that app: kitty's "Copy" is ctrl+shift+c, not ctrl+c.
+
+# Browsers
+
+[[app]]
+name = "Firefox"
+classes = ["firefox", "firefox-esr", "org.mozilla.firefox", "librewolf", "zen", "floorp"]
+shortcuts = [
+  { name = "Address bar", keys = "ctrl+l" },
+  { name = "New window", keys = "ctrl+n" },
+  { name = "New private window", keys = "ctrl+shift+p" },
+  { name = "Close window", keys = "ctrl+shift+w" },
+  { name = "Reload without cache", keys = "ctrl+shift+r" },
+  { name = "Mute tab", keys = "ctrl+m" },
+  { name = "Bookmark this page", keys = "ctrl+d" },
+  { name = "Bookmarks sidebar", keys = "ctrl+b" },
+  { name = "History sidebar", keys = "ctrl+h" },
+  { name = "Downloads", keys = "ctrl+shift+y" },
+  { name = "Reader view", keys = "ctrl+alt+r" },
+  { name = "Print", keys = "ctrl+p" },
+  { name = "Developer tools", keys = "ctrl+shift+i" },
+]
+
+[[app]]
+name = "Chromium"
+classes = ["chromium", "google-chrome", "brave-browser", "vivaldi-stable", "microsoft-edge"]
+shortcuts = [
+  { name = "Address bar", keys = "ctrl+l" },
+  { name = "New window", keys = "ctrl+n" },
+  { name = "New incognito window", keys = "ctrl+shift+n" },
+  { name = "Close window", keys = "ctrl+shift+w" },
+  { name = "Reload without cache", keys = "ctrl+shift+r" },
+  { name = "Bookmark this page", keys = "ctrl+d" },
+  { name = "Bookmarks bar", keys = "ctrl+shift+b" },
+  { name = "History", keys = "ctrl+h" },
+  { name = "Downloads", keys = "ctrl+j" },
+  { name = "Print", keys = "ctrl+p" },
+  { name = "Task manager", keys = "shift+Escape" },
+  { name = "Developer tools", keys = "ctrl+shift+i" },
+]
+
+# Terminals: copy and paste need shift, so these replace the common ones.
+
+[[app]]
+name = "kitty"
+classes = ["kitty"]
+shortcuts = [
+  { name = "Copy", keys = "ctrl+shift+c" },
+  { name = "Paste", keys = "ctrl+shift+v" },
+  { name = "New tab", keys = "ctrl+shift+t" },
+  { name = "Close tab", keys = "ctrl+shift+q" },
+  { name = "Next tab", keys = "ctrl+shift+Right" },
+  { name = "Previous tab", keys = "ctrl+shift+Left" },
+  { name = "New window", keys = "ctrl+shift+Enter" },
+  { name = "Close window", keys = "ctrl+shift+w" },
+  { name = "Next layout", keys = "ctrl+shift+l" },
+  { name = "Scroll to top", keys = "ctrl+shift+Home" },
+  { name = "Scroll to bottom", keys = "ctrl+shift+End" },
+  { name = "Browse scrollback", keys = "ctrl+shift+h" },
+  { name = "Open a link", keys = "ctrl+shift+e" },
+  { name = "Zoom in", keys = "ctrl+shift+equal" },
+  { name = "Zoom out", keys = "ctrl+shift+minus" },
+  { name = "Actual size", keys = "ctrl+shift+Backspace" },
+]
+
+[[app]]
+name = "Konsole"
+classes = ["org.kde.konsole", "konsole"]
+shortcuts = [
+  { name = "Copy", keys = "ctrl+shift+c" },
+  { name = "Paste", keys = "ctrl+shift+v" },
+  { name = "New tab", keys = "ctrl+shift+t" },
+  { name = "Close tab", keys = "ctrl+shift+w" },
+  { name = "Next tab", keys = "shift+Right" },
+  { name = "Previous tab", keys = "shift+Left" },
+  { name = "New window", keys = "ctrl+shift+n" },
+  { name = "Find", keys = "ctrl+shift+f" },
+]
+
+[[app]]
+name = "GNOME Terminal"
+classes = ["org.gnome.Terminal", "gnome-terminal-server", "org.gnome.Console", "kgx"]
+shortcuts = [
+  { name = "Copy", keys = "ctrl+shift+c" },
+  { name = "Paste", keys = "ctrl+shift+v" },
+  { name = "New tab", keys = "ctrl+shift+t" },
+  { name = "Close tab", keys = "ctrl+shift+w" },
+  { name = "Next tab", keys = "ctrl+pagedown" },
+  { name = "Previous tab", keys = "ctrl+pageup" },
+  { name = "New window", keys = "ctrl+shift+n" },
+  { name = "Find", keys = "ctrl+shift+f" },
+]
+
+[[app]]
+name = "Ghostty"
+classes = ["com.mitchellh.ghostty", "ghostty"]
+shortcuts = [
+  { name = "Copy", keys = "ctrl+shift+c" },
+  { name = "Paste", keys = "ctrl+shift+v" },
+  { name = "New tab", keys = "ctrl+shift+t" },
+  { name = "Close tab", keys = "ctrl+shift+w" },
+  { name = "New window", keys = "ctrl+shift+n" },
+  { name = "Split right", keys = "ctrl+shift+o" },
+  { name = "Split down", keys = "ctrl+shift+e" },
+]
+
+[[app]]
+name = "WezTerm"
+classes = ["org.wezfurlong.wezterm", "wezterm"]
+shortcuts = [
+  { name = "Copy", keys = "ctrl+shift+c" },
+  { name = "Paste", keys = "ctrl+shift+v" },
+  { name = "New tab", keys = "ctrl+shift+t" },
+  { name = "Close tab", keys = "ctrl+shift+w" },
+  { name = "New window", keys = "ctrl+shift+n" },
+  { name = "Find", keys = "ctrl+shift+f" },
+]
+
+[[app]]
+name = "Alacritty"
+classes = ["Alacritty", "alacritty"]
+shortcuts = [
+  { name = "Copy", keys = "ctrl+shift+c" },
+  { name = "Paste", keys = "ctrl+shift+v" },
+  { name = "Find", keys = "ctrl+shift+f" },
+  { name = "Vi mode", keys = "ctrl+shift+space" },
+]
+
+[[app]]
+name = "foot"
+classes = ["foot", "footclient"]
+shortcuts = [
+  { name = "Copy", keys = "ctrl+shift+c" },
+  { name = "Paste", keys = "ctrl+shift+v" },
+  { name = "Find", keys = "ctrl+shift+r" },
+  { name = "New window", keys = "ctrl+shift+n" },
+]
+
+# Files
+
+[[app]]
+name = "Nautilus"
+classes = ["org.gnome.Nautilus"]
+shortcuts = [
+  { name = "Parent folder", keys = "alt+Up" },
+  { name = "Home folder", keys = "alt+Home" },
+  { name = "Type a location", keys = "ctrl+l" },
+  { name = "New folder", keys = "ctrl+shift+n" },
+  { name = "New window", keys = "ctrl+n" },
+  { name = "Rename", keys = "F2" },
+  { name = "Move to trash", keys = "Delete" },
+  { name = "Properties", keys = "alt+Enter" },
+  { name = "Show hidden files", keys = "ctrl+h" },
+  { name = "Grid view", keys = "ctrl+1" },
+  { name = "List view", keys = "ctrl+2" },
+  { name = "Sidebar", keys = "F9" },
+]
+
+[[app]]
+name = "Dolphin"
+classes = ["org.kde.dolphin"]
+shortcuts = [
+  { name = "Parent folder", keys = "alt+Up" },
+  { name = "Home folder", keys = "alt+Home" },
+  { name = "Type a location", keys = "ctrl+l" },
+  { name = "New folder", keys = "F10" },
+  { name = "New window", keys = "ctrl+n" },
+  { name = "Rename", keys = "F2" },
+  { name = "Move to trash", keys = "Delete" },
+  { name = "Properties", keys = "alt+Enter" },
+  { name = "Show hidden files", keys = "ctrl+h" },
+  { name = "Split view", keys = "F3" },
+  { name = "Terminal panel", keys = "F4" },
+  { name = "Places panel", keys = "F9" },
+  { name = "Icons view", keys = "ctrl+1" },
+  { name = "Details view", keys = "ctrl+3" },
+]
+
+[[app]]
+name = "Thunar"
+classes = ["thunar", "Thunar"]
+shortcuts = [
+  { name = "Parent folder", keys = "alt+Up" },
+  { name = "Home folder", keys = "alt+Home" },
+  { name = "Type a location", keys = "ctrl+l" },
+  { name = "New folder", keys = "ctrl+shift+n" },
+  { name = "New window", keys = "ctrl+n" },
+  { name = "Rename", keys = "F2" },
+  { name = "Move to trash", keys = "Delete" },
+  { name = "Properties", keys = "alt+Enter" },
+  { name = "Show hidden files", keys = "ctrl+h" },
+]
+
+# Code
+
+[[app]]
+name = "VS Code"
+classes = ["code", "Code", "code-oss", "codium", "VSCodium"]
+shortcuts = [
+  { name = "Back", keys = "ctrl+alt+minus" },
+  { name = "Forward", keys = "ctrl+shift+minus" },
+  { name = "Command palette", keys = "ctrl+shift+p" },
+  { name = "Go to file", keys = "ctrl+p" },
+  { name = "Go to line", keys = "ctrl+g" },
+  { name = "Go to definition", keys = "F12" },
+  { name = "Rename symbol", keys = "F2" },
+  { name = "Format document", keys = "ctrl+shift+i" },
+  { name = "Toggle comment", keys = "ctrl+slash" },
+  { name = "Find in files", keys = "ctrl+shift+f" },
+  { name = "Next editor", keys = "ctrl+pagedown" },
+  { name = "Previous editor", keys = "ctrl+pageup" },
+  { name = "Split editor", keys = "ctrl+backslash" },
+  { name = "Sidebar", keys = "ctrl+b" },
+  { name = "Panel", keys = "ctrl+j" },
+  { name = "Terminal", keys = "ctrl+grave" },
+]
+
+[[app]]
+name = "JetBrains IDE"
+classes = [
+  "jetbrains-idea", "jetbrains-idea-ce", "jetbrains-pycharm", "jetbrains-pycharm-ce", "jetbrains-webstorm",
+  "jetbrains-clion", "jetbrains-goland", "jetbrains-rustrover", "jetbrains-rider", "jetbrains-phpstorm",
+  "jetbrains-studio",
+]
+shortcuts = [
+  { name = "Back", keys = "ctrl+alt+Left" },
+  { name = "Forward", keys = "ctrl+alt+Right" },
+  { name = "Find action", keys = "ctrl+shift+a" },
+  { name = "Go to file", keys = "ctrl+shift+n" },
+  { name = "Go to class", keys = "ctrl+n" },
+  { name = "Go to declaration", keys = "ctrl+b" },
+  { name = "Recent files", keys = "ctrl+e" },
+  { name = "Rename", keys = "shift+F6" },
+  { name = "Reformat code", keys = "ctrl+alt+l" },
+  { name = "Toggle comment", keys = "ctrl+slash" },
+  { name = "Close tab", keys = "ctrl+F4" },
+  { name = "Run", keys = "shift+F10" },
+  { name = "Debug", keys = "shift+F9" },
+  { name = "Terminal", keys = "alt+F12" },
+]
+
+# Writing and mail
+
+[[app]]
+name = "Obsidian"
+classes = ["obsidian", "md.obsidian.Obsidian"]
+shortcuts = [
+  { name = "Back", keys = "ctrl+alt+Left" },
+  { name = "Forward", keys = "ctrl+alt+Right" },
+  { name = "Command palette", keys = "ctrl+p" },
+  { name = "Quick switcher", keys = "ctrl+o" },
+  { name = "New note", keys = "ctrl+n" },
+  { name = "Toggle reading view", keys = "ctrl+e" },
+  { name = "Search all notes", keys = "ctrl+shift+f" },
+  { name = "Graph view", keys = "ctrl+g" },
+]
+
+[[app]]
+name = "LibreOffice"
+classes = [
+  "libreoffice-writer", "libreoffice-calc", "libreoffice-impress", "libreoffice-draw", "libreoffice-startcenter",
+  "soffice", "org.libreoffice.LibreOffice",
+]
+shortcuts = [
+  { name = "Redo", keys = "ctrl+y" },
+  { name = "Full screen", keys = "ctrl+shift+j" },
+  { name = "Bold", keys = "ctrl+b" },
+  { name = "Italic", keys = "ctrl+i" },
+  { name = "Underline", keys = "ctrl+u" },
+  { name = "Find and replace", keys = "ctrl+h" },
+  { name = "Spelling", keys = "F7" },
+  { name = "Navigator", keys = "F5" },
+  { name = "Styles", keys = "F11" },
+  { name = "Sidebar", keys = "ctrl+F5" },
+  { name = "Print", keys = "ctrl+p" },
+]
+
+[[app]]
+name = "Thunderbird"
+classes = ["thunderbird", "org.mozilla.Thunderbird", "betterbird"]
+shortcuts = [
+  { name = "Get new messages", keys = "ctrl+shift+t" },
+  { name = "New message", keys = "ctrl+n" },
+  { name = "Reply", keys = "ctrl+r" },
+  { name = "Reply all", keys = "ctrl+shift+r" },
+  { name = "Forward message", keys = "ctrl+l" },
+  { name = "Archive", keys = "a" },
+  { name = "Delete", keys = "Delete" },
+  { name = "Mark as junk", keys = "j" },
+  { name = "Mark as read", keys = "m" },
+  { name = "Star", keys = "s" },
+  { name = "Next unread", keys = "n" },
+  { name = "Quick filter", keys = "ctrl+shift+k" },
+  { name = "Address book", keys = "ctrl+shift+b" },
+]
+
+# Chat
+
+[[app]]
+name = "Discord"
+classes = ["discord", "vesktop", "WebCord"]
+shortcuts = [
+  { name = "Quick switcher", keys = "ctrl+k" },
+  { name = "Next channel", keys = "alt+Down" },
+  { name = "Previous channel", keys = "alt+Up" },
+  { name = "Next unread channel", keys = "alt+shift+Down" },
+  { name = "Next server", keys = "ctrl+alt+Down" },
+  { name = "Previous server", keys = "ctrl+alt+Up" },
+  { name = "Mark channel read", keys = "Escape" },
+  { name = "Mute microphone", keys = "ctrl+shift+m" },
+  { name = "Deafen", keys = "ctrl+shift+d" },
+  { name = "Emoji picker", keys = "ctrl+e" },
+  { name = "Upload a file", keys = "ctrl+shift+u" },
+]
+
+[[app]]
+name = "Slack"
+classes = ["slack", "Slack"]
+shortcuts = [
+  { name = "Quick switcher", keys = "ctrl+k" },
+  { name = "Search", keys = "ctrl+g" },
+  { name = "All unreads", keys = "ctrl+shift+a" },
+  { name = "Threads", keys = "ctrl+shift+t" },
+  { name = "Mentions", keys = "ctrl+shift+m" },
+  { name = "Direct messages", keys = "ctrl+shift+k" },
+  { name = "Next channel", keys = "alt+Down" },
+  { name = "Previous channel", keys = "alt+Up" },
+  { name = "Next unread channel", keys = "alt+shift+Down" },
+  { name = "Mark all read", keys = "shift+Escape" },
+]
+
+# Images
+
+[[app]]
+name = "GIMP"
+classes = ["gimp", "Gimp", "gimp-2.10", "org.gimp.GIMP"]
+shortcuts = [
+  { name = "Redo", keys = "ctrl+y" },
+  { name = "Export as", keys = "ctrl+shift+e" },
+  { name = "New layer", keys = "ctrl+shift+n" },
+  { name = "Select none", keys = "ctrl+shift+a" },
+  { name = "Fit image in window", keys = "ctrl+shift+j" },
+  { name = "Hide docks", keys = "Tab" },
+  { name = "Move tool", keys = "m" },
+  { name = "Rectangle select", keys = "r" },
+  { name = "Crop tool", keys = "shift+c" },
+  { name = "Paintbrush", keys = "p" },
+  { name = "Eraser", keys = "shift+e" },
+  { name = "Text tool", keys = "t" },
+  { name = "Color picker", keys = "o" },
+  { name = "Swap colors", keys = "x" },
+]
+
+[[app]]
+name = "Inkscape"
+classes = ["org.inkscape.Inkscape", "inkscape", "Inkscape"]
+shortcuts = [
+  { name = "Selector", keys = "s" },
+  { name = "Node tool", keys = "n" },
+  { name = "Rectangle", keys = "r" },
+  { name = "Ellipse", keys = "e" },
+  { name = "Pen", keys = "b" },
+  { name = "Text tool", keys = "t" },
+  { name = "Group", keys = "ctrl+g" },
+  { name = "Ungroup", keys = "ctrl+shift+g" },
+  { name = "Duplicate", keys = "ctrl+d" },
+  { name = "Raise to top", keys = "Home" },
+  { name = "Lower to bottom", keys = "End" },
+  { name = "Zoom to page", keys = "5" },
+  { name = "Fill and stroke", keys = "ctrl+shift+f" },
+  { name = "Align and distribute", keys = "ctrl+shift+a" },
+  { name = "Export", keys = "ctrl+shift+e" },
+]
+
+# Video
+
+[[app]]
+name = "mpv"
+classes = ["mpv"]
+shortcuts = [
+  { name = "Play or pause", keys = "space" },
+  { name = "Full screen", keys = "f" },
+  { name = "Mute", keys = "m" },
+  { name = "Volume up", keys = "0" },
+  { name = "Volume down", keys = "9" },
+  { name = "Back 5 seconds", keys = "Left" },
+  { name = "Ahead 5 seconds", keys = "Right" },
+  { name = "Back a minute", keys = "Down" },
+  { name = "Ahead a minute", keys = "Up" },
+  { name = "Next file", keys = "Enter" },
+  { name = "Next subtitles", keys = "j" },
+  { name = "Show or hide subtitles", keys = "v" },
+  { name = "Faster", keys = "bracketright" },
+  { name = "Slower", keys = "bracketleft" },
+  { name = "Screenshot", keys = "s" },
+  { name = "Quit", keys = "q" },
+]
+
+[[app]]
+name = "VLC"
+classes = ["vlc", "org.videolan.VLC"]
+shortcuts = [
+  { name = "Play or pause", keys = "space" },
+  { name = "Full screen", keys = "f" },
+  { name = "Mute", keys = "m" },
+  { name = "Volume up", keys = "ctrl+Up" },
+  { name = "Volume down", keys = "ctrl+Down" },
+  { name = "Back 10 seconds", keys = "alt+Left" },
+  { name = "Ahead 10 seconds", keys = "alt+Right" },
+  { name = "Back a minute", keys = "ctrl+Left" },
+  { name = "Ahead a minute", keys = "ctrl+Right" },
+  { name = "Next track", keys = "n" },
+  { name = "Previous track", keys = "p" },
+  { name = "Next subtitles", keys = "v" },
+  { name = "Faster", keys = "bracketright" },
+  { name = "Slower", keys = "bracketleft" },
+  { name = "Screenshot", keys = "shift+s" },
+]
+
+# Documents
+
+[[app]]
+name = "Okular"
+classes = ["org.kde.okular", "okular"]
+shortcuts = [
+  { name = "Full screen", keys = "ctrl+shift+f" },
+  { name = "Go to page", keys = "ctrl+g" },
+  { name = "Presentation", keys = "ctrl+shift+p" },
+  { name = "Sidebar", keys = "F7" },
+  { name = "Annotations", keys = "F6" },
+  { name = "Print", keys = "ctrl+p" },
+]
+
+[[app]]
+name = "Evince"
+classes = ["org.gnome.Evince", "evince"]
+shortcuts = [
+  { name = "Next page", keys = "n" },
+  { name = "Previous page", keys = "p" },
+  { name = "Go to page", keys = "ctrl+l" },
+  { name = "Best fit", keys = "f" },
+  { name = "Fit width", keys = "w" },
+  { name = "Rotate left", keys = "ctrl+Left" },
+  { name = "Rotate right", keys = "ctrl+Right" },
+  { name = "Presentation", keys = "F5" },
+  { name = "Sidebar", keys = "F9" },
+  { name = "Print", keys = "ctrl+p" },
+]
+
+[[app]]
+name = "Zathura"
+classes = ["org.pwmt.zathura", "zathura"]
+shortcuts = [
+  { name = "Next page", keys = "shift+j" },
+  { name = "Previous page", keys = "shift+k" },
+  { name = "Fit page", keys = "a" },
+  { name = "Fit width", keys = "s" },
+  { name = "Rotate", keys = "r" },
+  { name = "Two pages", keys = "d" },
+  { name = "Dark colors", keys = "ctrl+r" },
+  { name = "Contents", keys = "Tab" },
+  { name = "Presentation", keys = "F5" },
+]

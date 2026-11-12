@@ -217,7 +217,7 @@ export default function App() {
             )}
             {page === "shapes" && <Shapes shapes={shapes} usedWhere={usedWhere} onChanged={reloadShapes} />}
             {page === "app" && app && (
-              <AppPage app={app} presets={state.presets} onChange={edit(setApp)} shapeProps={shapeProps} />
+              <AppPage app={app} appShortcuts={state.appShortcuts} onChange={edit(setApp)} shapeProps={shapeProps} />
             )}
             {page === "setup" && <SetupPage notes={notes} />}
           </div>
@@ -357,30 +357,17 @@ function GeneralPage({
 
 function AppPage({
   app,
-  presets,
+  appShortcuts,
   onChange,
   shapeProps,
 }: {
   app: api.App;
-  presets: api.Preset[];
+  appShortcuts: api.AppShortcuts[];
   onChange: (app: api.App) => void;
   shapeProps: { shapes: api.ShapeInfo[]; onNewShape: (name: string) => void; keyboard: boolean };
 
 }) {
-  const lower = (s: string) => s.toLowerCase();
-  const matching = presets.filter((p) => p.classes.some((c) => app.classes.map(lower).includes(lower(c))));
-  const others = presets.filter((p) => !matching.includes(p));
-  const [preset, setPreset] = useState(matching[0]?.name ?? "");
   const name = api.appName(app);
-
-  const addPreset = () => {
-    const chosen = presets.find((p) => p.name === preset);
-    if (!chosen) return;
-    // A preset's gesture replaces one drawn the same way.
-    const key = (g: api.Gesture) => `${g.input}:${g.value}:${g.with ?? ""}`;
-    const incoming = new Set(chosen.gestures.map(key));
-    onChange({ ...app, gestures: [...app.gestures.filter((g) => !incoming.has(key(g))), ...chosen.gestures] });
-  };
 
   return (
     <>
@@ -410,31 +397,6 @@ function AppPage({
             }
           />
         </Row>
-        {app.enabled && (
-          <Row label="Preset" hint="Adds its gestures, replacing yours for the same input">
-            <select className="field w-48" value={preset} onChange={(e) => setPreset(e.target.value)}>
-              <option value="" disabled>
-                Choose…
-              </option>
-              {matching.length > 0 && (
-                <optgroup label="For This App">
-                  {matching.map((p) => (
-                    <option key={p.name}>{p.name}</option>
-                  ))}
-                </optgroup>
-              )}
-              <optgroup label="Others">
-                {others.map((p) => (
-                  <option key={p.name}>{p.name}</option>
-                ))}
-              </optgroup>
-            </select>
-            <button className="button" disabled={!preset} onClick={addPreset} title="Add this preset's gestures">
-
-              Add
-            </button>
-          </Row>
-        )}
       </Section>
       {app.enabled && (
         <GestureList
@@ -442,7 +404,7 @@ function AppPage({
           note={`These replace the ones for every app that are drawn the same way. Ready-made actions press ${name}'s usual shortcuts; if you've changed one, change the keys too.`}
           gestures={app.gestures}
           onChange={(gestures) => onChange({ ...app, gestures })}
-          readyMade={groupsFor(app.classes, presets)}
+          readyMade={groupsFor(app.classes, appShortcuts)}
           {...shapeProps}
         />
       )}
