@@ -97,7 +97,7 @@ A stroke or shape can also need keys held on the keyboard, so one stroke can do 
 The action is one of these:
 
 - `keys = "ctrl+shift+t"`: a key combo for the window you drew over. Keys are positions on a US keyboard, whatever your layout.
-- `command = "..."`: a shell command. It gets `$MOUSEWAND_CLASS` and `$MOUSEWAND_TITLE`, and the selected text in `$MOUSEWAND_SELECTION`. See [Using the selected text](#using-the-selected-text).
+- `command = "..."`: a shell command. It gets `$MOUSEWAND_CLASS` and `$MOUSEWAND_TITLE`, and the selected text in `$SELECTION`. See [Using the selected text](#using-the-selected-text).
 
 - `dispatch = "..."`: a compositor command. See [Desktops](#desktops) for what each one takes.
 
@@ -249,18 +249,18 @@ color = ["#ffd36e", "#ff8a5c", "#e85d8a", "#7b4bb7"]
 
 ### Using the selected text
 
-A command that mentions `$MOUSEWAND_SELECTION` gets the text you last selected in it, read as the gesture fires. That's the primary selection, which selecting text sets without copying it, from whichever window you selected in. mousewand reads it with `wl-paste` on Wayland and `xclip` on X11, so one of them has to be installed.
+A command that mentions `$SELECTION` gets the text you last selected in it, read as the gesture fires. That's the primary selection, which selecting text sets without copying it, from whichever window you selected in. mousewand reads it with `wl-paste` on Wayland and `xclip` on X11, so one of them has to be installed.
 
 ```toml
 [[gesture]]
 stroke = "UR"
 name = "Copy selection"
-action = { command = 'printf %s "$MOUSEWAND_SELECTION" | wl-copy' }
+action = { command = 'printf %s "$SELECTION" | wl-copy' }
 
 [[gesture]]
 stroke = "UL"
 name = "Search selection"
-action = { command = 'xdg-open "https://duckduckgo.com/?q=$(printf %s "$MOUSEWAND_SELECTION" | jq -sRr @uri)"' }
+action = { command = 'xdg-open "https://duckduckgo.com/?q=$(printf %s "$SELECTION" | jq -sRr @uri)"' }
 ```
 
 ## Desktops

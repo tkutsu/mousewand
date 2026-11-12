@@ -8,6 +8,7 @@ import GestureList from "./GestureList";
 import HintSettings from "./HintSettings";
 import SettingsGestures from "./SettingsGestures";
 import Shapes from "./Shapes";
+import TrailPreview from "./TrailPreview";
 import { Logo, Problem, Row, Section, Switch } from "./ui";
 
 type Page = "general" | "every" | "app" | "shapes" | "setup";
@@ -272,7 +273,7 @@ function GeneralPage({
   onChange,
 }: {
   settings: api.Settings;
-  themes: string[];
+  themes: api.ThemeInfo[];
   onChange: (settings: api.Settings) => void;
 }) {
   const set = (patch: Partial<api.Settings>) => onChange({ ...settings, ...patch });
@@ -341,10 +342,13 @@ function GeneralPage({
             onChange={(e) => set({ theme: e.target.value })}
           >
             {themes.map((t) => (
-              <option key={t}>{t}</option>
+              <option key={t.name}>{t.name}</option>
             ))}
           </select>
         </Row>
+        <div className="p-3">
+          <TrailPreview theme={themes.find((t) => t.name === settings.theme)} />
+        </div>
       </Section>
       <HintSettings hint={settings.hint} onChange={(hint) => set({ hint })} />
     </>

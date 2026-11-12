@@ -337,7 +337,7 @@ pub fn path() -> anyhow::Result<std::ffi::OsString> {
 
 /// Runs a shell command, waiting for it only if `wait`. It sees the window
 /// in `MOUSEWAND_CLASS` and `MOUSEWAND_TITLE`, the selected text in
-/// `MOUSEWAND_SELECTION` if it mentions it, and mousewand's directory in
+/// `SELECTION` if it mentions it, and mousewand's directory in
 /// `PATH`. A command that isn't installed gets a notification, since a
 /// gesture that does nothing looks like mousewand's fault.
 fn spawn(command: &str, window: &Window, wait: bool) -> anyhow::Result<()> {
@@ -347,8 +347,8 @@ fn spawn(command: &str, window: &Window, wait: bool) -> anyhow::Result<()> {
         .env("MOUSEWAND_CLASS", &window.class)
         .env("MOUSEWAND_TITLE", &window.title)
         .stdin(Stdio::null());
-    if command.contains("MOUSEWAND_SELECTION") {
-        sh.env("MOUSEWAND_SELECTION", selection());
+    if command.contains("SELECTION") {
+        sh.env("SELECTION", selection());
     }
     let mut child = sh.spawn().with_context(|| format!("running {command:?}"))?;
     if wait {
