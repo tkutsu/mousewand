@@ -212,8 +212,16 @@ pub struct Settings {
     pub hold_ms: u64,
     /// Holding still this long mid-stroke cancels the gesture. 0 never does.
     pub cancel_ms: u64,
-    /// Shorter direction runs are treated as noise.
+    /// Shorter direction runs are treated as noise, and so are runs under a
+    /// tenth of the drawing.
     pub min_segment: f64,
+    /// How far, in degrees, a drawing may stray from a oneshot stroke and
+    /// still fire it when nothing matches exactly: see
+    /// [`crate::stroke::Drawing::deviation`]. At 30, a lone line may lean
+    /// 30° off, though it reads as a diagonal from 22.5°, and a corner
+    /// rounded into a diagonal may take up 40% of the drawing. 0 fires
+    /// exact strokes only.
+    pub stroke_tolerance: f64,
     /// Only grab mice whose name contains one of these. Empty grabs all mice.
     pub devices: Vec<String>,
     /// The trail theme: a built-in one, or a file in `themes/` without `.toml`.
@@ -231,6 +239,7 @@ impl Default for Settings {
             hold_ms: 300,
             cancel_ms: 0,
             min_segment: 30.0,
+            stroke_tolerance: 30.0,
             devices: Vec::new(),
             theme: "default".into(),
             global_trigger: None,

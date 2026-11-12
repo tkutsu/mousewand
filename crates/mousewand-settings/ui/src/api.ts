@@ -27,6 +27,8 @@ export type Settings = {
   /** Holding still this long mid-stroke cancels it; 0 never does. */
   cancelMs: number;
   minSegment: number;
+  /** How far, in degrees, a drawing may stray from a stroke and still fire it; 0 fires exact strokes only. */
+  strokeTolerance: number;
   theme: string;
   /** What opens this app. */
   openSettings: Drawn;

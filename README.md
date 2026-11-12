@@ -87,7 +87,7 @@ Without `match`, an app file applies to the window class in its file name. An ap
 
 The input is one of these:
 
-- `stroke = "DR"`: directions in the order you draw them. `U`, `D`, `L` and `R`, and diagonals as numpad digits: `7` up-left, `9` up-right, `1` down-left, `3` down-right.
+- `stroke = "DR"`: directions in the order you draw them. `U`, `D`, `L` and `R`, and diagonals as numpad digits: `7` up-left, `9` up-right, `1` down-left, `3` down-right. When nothing matches exactly, the closest stroke fires if it's within `stroke_tolerance`: a rounded corner drawn as `U9R` counts as `UR`. Repeat and hold strokes only match exactly.
 - `shape = "circle"`: a drawn shape. See [Shapes](#shapes).
 - `wheel = "up"`: a wheel notch while you hold the trigger, `up`, `down`, `left` or `right`. It fires on every notch.
 - `click = "right"`: a `left` or `right` click while you hold the trigger. With `right` as the trigger, only `left`.
@@ -208,7 +208,8 @@ trigger = "middle"   # middle, right, back (mouse 4), forward (mouse 5), mouse6 
 threshold = 8        # pixels to move before a press becomes a gesture
 hold_ms = 300        # holding still this long makes it a normal press
 cancel_ms = 0        # holding still this long mid-stroke cancels it, e.g. 700; 0 never does
-min_segment = 30     # shorter strokes are ignored as noise
+min_segment = 30     # shorter strokes are ignored as noise, and so are any under a tenth of the drawing
+stroke_tolerance = 30   # degrees a drawing may stray from a stroke and still fire it; 0 only exact
 devices = []         # only use mice whose name contains one of these
 theme = "default"    # a built-in theme, or a file in themes/ without .toml
 open_settings = { shape = "circle" }   # or a stroke, like { stroke = "U39D" }
@@ -316,7 +317,7 @@ The log should say `grabbed` and your mouse's name. If it doesn't, or it asks wh
 
 ### A stroke does nothing
 
-The log shows what mousewand saw, like `DUDU: no gesture`. Draw more slowly, or lower `min_segment`.
+The log shows what mousewand saw, like `DUDU: no gesture`, or `U9R: close to UR` when it fired the closest stroke. Draw more slowly, or lower `min_segment`.
 
 ### The wrong window reacts
 

@@ -81,18 +81,26 @@ impl Daemon {
             Output::Still => self.still(),
             Output::Wheel(wheel) => self.run(|s| s.wheel(wheel)),
             Output::Click(button) => self.run(|s| s.click(button)),
-            Output::End(stroke, path) => {
+            Output::End(drawing) => {
                 if self.active.as_ref().is_some_and(|a| a.session.abandoned()) {
                     self.active = None;
                     return;
                 }
                 self.read_mods();
+                let stroke = drawing.stroke.clone();
                 if let Some(active) = &mut self.active {
                     active.stroke = stroke.clone();
                 }
-                self.run(|s| s.end(&stroke, &path));
+                self.run(|s| s.end(&drawing));
                 self.show_hint(true);
-                let matched = self.active.take().is_some_and(|a| a.session.matched());
+                let active = self.active.take();
+                let fired = active.as_ref().and_then(|a| a.session.fired()).map(|(g, _)| &g.input);
+                if let Some(mousewand_core::Input::Stroke(bound)) = fired
+                    && *bound != stroke
+                {
+                    log::info!("{stroke}: close to {bound}");
+                }
+                let matched = active.is_some_and(|a| a.session.matched());
                 if !matched && !stroke.is_empty() {
                     log::info!("{stroke}: no gesture");
                 }
@@ -171,7 +179,7 @@ impl Daemon {
             false => self.config.gestures_for(&window.class),
         };
         self.active = Some(Active {
-            session: Session::new(gestures),
+            session: Session::new(gestures, self.config.settings.stroke_tolerance),
             window,
             focused: global,
             stroke: Stroke::default(),
