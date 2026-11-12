@@ -166,7 +166,15 @@ Being in the `input` group works too.
 
 ### Turning gestures off
 
-`enabled = false` in an app file turns gestures off over that app, for games or anything else that wants the button for itself. The trigger is an ordinary button there, and so is the `[global]` trigger:
+Gestures are off over games, and over anything else that wants the button for itself. There the trigger is an ordinary button, and so is the `[global]` trigger. `[off]` in `config.toml` lists such windows by class. `*` matches any run of characters and `?` matches one, ignoring case. `games`, on by default, covers Steam games run through Proton (`steam_app_*`), anything run through Wine (`*.exe`) and gamescope. Native Linux games have classes of their own, so list those:
+
+```toml
+[off]
+games = true
+match = ["blender", "org.gnome.*"]
+```
+
+The General page of the settings app edits the same list. An app file can also turn its app off:
 
 ```toml
 # ~/.config/mousewand/apps/blender.toml
@@ -208,7 +216,7 @@ open_settings = { shape = "circle" }   # or a stroke, like { stroke = "U39D" }
 
 ### Hints
 
-Hints show the stroke so far as arrows, what it could still become, and the name of the gesture that fired. They fade out with the trail. They're off until you turn them on, under General in the settings app, which also picks a style and shows an example.
+Hints show the stroke so far as arrows, what it could still become, and the name of the gesture that fired. They fade out with the trail. They're off until you turn them on, under Appearance in the settings app, which also picks a style and shows an example.
 
 ```toml
 [hint]
@@ -347,7 +355,7 @@ The compositor now sees one virtual mouse, "mousewand virtual mouse". Apply per-
 
 ### No hints
 
-Hints are off by default. Turn them on under General in the settings app, or set `enabled = true` under `[hint]`. If hints show arrows but no text, the `font` isn't installed. `fc-match "Font Name"` shows what it resolves to.
+Hints are off by default. Turn them on under Appearance in the settings app, or set `enabled = true` under `[hint]`. If hints show arrows but no text, the `font` isn't installed. `fc-match "Font Name"` shows what it resolves to.
 
 ### "already a [global] gesture"
 
