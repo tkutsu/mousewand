@@ -19,7 +19,9 @@ const DEFAULT_STYLE = {
     margin: 64,
     font: 'sans-serif',
     size: 17,
+    nextSize: 14,
     text: [0.95, 0.95, 0.97, 1],
+    nextText: [0.557, 0.557, 0.576, 1],
     glyph: [0.62, 0.77, 1, 1],
     failed: [1, 0.35, 0.35, 1],
     background: [0.11, 0.12, 0.15, 1],
@@ -152,25 +154,30 @@ export class Hint {
             fired: [css(s.glyph), css(s.text), hint.label],
             missed: [css(s.failed), css(s.failed), hint.label],
         }[hint.state];
-        const main = hint.stroke || label
+        // The main line is only the stroke so far; the rest is listed beside it.
+        const main = hint.stroke || hint.shape || hint.mouse
+            ? {arrows: arrows(hint.stroke), shape: hint.shape, mouse: hint.mouse, size: s.size, glyph: s.glyph, arrow}
+            : null;
+        // The gesture's name, next to the main line. A miss has one only
+        // when it was cancelled.
+        const name = label
             ? {
-                arrows: arrows(hint.stroke), shape: hint.shape, mouse: hint.mouse, label,
-                count: hint.count > 1 ? `${hint.count}×` : null,
-                size: s.size, glyph: s.glyph, arrow, text,
+                arrows: '', label, count: hint.count > 1 ? `${hint.count}×` : null,
+                size: s.nextSize, arrow, text, listed: true,
             }
             : null;
         const next = hint.next.map(([rest, l, mouse]) => ({
-            arrows: arrows(rest), mouse, label: l, size: s.size * 0.82,
+            arrows: arrows(rest), mouse, label: l, size: s.nextSize,
             glyph: [...s.glyph.slice(0, 3), s.glyph[3] * 0.85],
-            arrow: css(s.glyph, 0.85), text: css(s.text, 0.7), next: true,
+            arrow: css(s.glyph, 0.85), text: css(s.nextText), listed: true,
         }));
         // At the bottom of the screen there's no room under the main line.
         const above = s.vertical === 'end';
-        const rows = above ? [...next, main] : [main, ...next];
-        if (!main && next.length === 0)
+        const rows = above ? [...next, name, main] : [main, name, ...next];
+        if (!main && !name && next.length === 0)
             return;
-        // Next moves line their labels up after the longest stroke.
-        const column = Math.max(0, ...next.map(squares)) * s.size * 0.82 * 1.05;
+        // Listed labels line up after the longest of their strokes.
+        const column = Math.max(0, ...next.map(squares)) * s.nextSize * 1.05;
 
         this._box = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
@@ -180,26 +187,26 @@ export class Hint {
         });
         this._main = null;
         rows.filter(Boolean).forEach((row, i, shown) => {
-            // A gap between the main line and the next moves.
-            const after = i > 0 && row.next !== shown[i - 1].next;
+            // A gap between the main line and the list.
+            const after = i > 0 && !!row.listed !== !!shown[i - 1].listed;
             const line = new St.BoxLayout({
                 style: `spacing: ${row.size * 0.45}px;` + (after ? ` margin-top: ${s.size * 0.35}px;` : ''),
             });
-            if (!row.next)
+            if (!row.listed)
                 this._main = line;
             // Only a fired hint has a shape, so it's in the glyph color.
             if (row.shape) {
                 line.add_child(shapeArea(row.shape, row.size, s.glyph));
             } else if (row.mouse) {
                 const mark = mouseMark(row.mouse, row.size, row.glyph, row.arrow);
-                if (row.next)
+                if (row.listed)
                     mark.style = `min-width: ${column}px;`;
                 line.add_child(mark);
-            } else if (row.arrows || row.next) {
+            } else if (row.arrows || (row.listed && column > 0)) {
                 line.add_child(new St.Label({
                     text: row.arrows,
                     y_align: Clutter.ActorAlign.CENTER,
-                    style: `color: ${row.arrow}; font-size: ${row.size}px;` + (row.next ? ` min-width: ${column}px;` : ''),
+                    style: `color: ${row.arrow}; font-size: ${row.size}px;` + (row.listed ? ` min-width: ${column}px;` : ''),
                 }));
             }
             if (row.label) {

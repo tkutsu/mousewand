@@ -44,8 +44,9 @@ struct Row<'a> {
     size: f32,
     arrow: [f32; 4],
     text: [f32; 4],
-    /// A possible next move, not the stroke so far.
-    next: bool,
+    /// In the list beside the main line: a possible next move, or the
+    /// gesture's name. The main line is only the stroke so far.
+    listed: bool,
 }
 
 /// What a row draws before its label.
@@ -99,7 +100,7 @@ impl Painter {
     pub fn paint(&mut self, hint: &Hint, style: &HintStyle, scale: f32) -> Option<Image> {
         let font = self.font(&style.font);
         let size = style.size * scale;
-        let small = size * 0.82;
+        let small = style.next_size * scale;
         let dim = |c: Rgba, f: f32| [c.0[0], c.0[1], c.0[2], c.0[3] * f];
         // A miss shows its arrows in the failed color.
         let (arrow, text) = match hint.state {
@@ -107,16 +108,26 @@ impl Painter {
             State::Fired => (style.glyph.0, style.text.0),
             State::Missed => (style.failed.0, style.failed.0),
         };
-        // A miss has a label only when it was cancelled.
-        let label = hint.label.as_deref();
-        let main = (!hint.stroke.0.is_empty() || label.is_some()).then(|| Row {
-            mark: hint.input.as_ref().map_or(Mark::Arrows(&hint.stroke.0), Mark::of),
-            label,
-            count: (hint.count > 1).then(|| format!("{}×", hint.count)),
+        let mark = hint.input.as_ref().map_or(Mark::Arrows(&hint.stroke.0), Mark::of);
+        let main = (mark.squares() > 0.0).then_some(Row {
+            mark,
+            label: None,
+            count: None,
             size,
             arrow,
             text,
-            next: false,
+            listed: false,
+        });
+        // The gesture's name, next to the main line. A miss has one only
+        // when it was cancelled.
+        let name = hint.label.as_deref().map(|label| Row {
+            mark: Mark::Arrows(&[]),
+            label: Some(label),
+            count: (hint.count > 1).then(|| format!("{}×", hint.count)),
+            size: small,
+            arrow,
+            text,
+            listed: true,
         });
         let next = hint.next.iter().map(|(rest, label)| Row {
             mark: Mark::of(rest),
@@ -124,46 +135,42 @@ impl Painter {
             count: None,
             size: small,
             arrow: dim(style.glyph, 0.85),
-            text: dim(style.text, 0.7),
-            next: true,
+            text: style.next_text.0,
+            listed: true,
         });
         let above = next_above(style);
         let rows: Vec<Row> = match above {
-            true => next.chain(main).collect(),
-            false => main.into_iter().chain(next).collect(),
+            true => next.chain(name).chain(main).collect(),
+            false => main.into_iter().chain(name).chain(next).collect(),
         };
         if rows.is_empty() {
             return None;
         }
 
         // A shape or a click takes one arrow's square, a wheel a bit more.
-        // Next moves line their labels up after the longest stroke.
+        // Listed labels line up after the longest of their strokes.
         let arrows_width = |row: &Row| row.mark.squares() * row.size * 1.05;
-        let next_arrows = rows.iter().filter(|r| r.next).map(arrows_width).fold(0.0, f32::max);
-        let gap = |row: &Row| {
-            if row.mark.squares() == 0.0 {
-                0.0
-            } else {
-                row.size * 0.45
-            }
-        };
+        let column = rows.iter().filter(|r| r.listed).map(arrows_width).fold(0.0, f32::max);
+        let gap = |row: &Row| if column > 0.0 { row.size * 0.45 } else { 0.0 };
         let count_gap = |row: &Row| row.size * 0.4;
         let widths: Vec<f32> = rows
             .iter()
             .map(|row| {
-                let arrows = if row.next { next_arrows } else { arrows_width(row) };
+                if !row.listed {
+                    return arrows_width(row);
+                }
                 let label = row.label.map_or(0.0, |l| gap(row) + text_width(font, l, row.size));
                 let count = row
                     .count
                     .as_deref()
                     .map_or(0.0, |c| count_gap(row) + text_width(font, c, row.size));
-                arrows + label + count
+                column + label + count
             })
             .collect();
         let pad = style.padding * scale;
         let line = |row: &Row| row.size * 1.45;
-        // Between the main line and the next moves, if there are both.
-        let mixed = rows.windows(2).any(|w| w[0].next != w[1].next);
+        // Between the main line and the list, if there are both.
+        let mixed = rows.windows(2).any(|w| w[0].listed != w[1].listed);
         let spacing = if mixed { size * 0.35 } else { 0.0 };
         let width = (widths.iter().fold(0.0, |a: f32, &b| a.max(b)) + pad * 2.0).ceil();
         let height = (rows.iter().map(line).sum::<f32>() + spacing + pad * 2.0).ceil();
@@ -184,7 +191,7 @@ impl Painter {
         }
         let mut y = pad;
         for (i, row) in rows.iter().enumerate() {
-            if i > 0 && row.next != rows[i - 1].next {
+            if i > 0 && row.listed != rows[i - 1].listed {
                 y += spacing;
             }
             let h = line(row);
@@ -201,8 +208,8 @@ impl Painter {
                 Mark::Mouse(part) => draw_mouse(&mut pixmap, part, x, top, row.size, row.arrow),
             }
             x += row.mark.squares() * square;
-            if row.next {
-                x = pad + next_arrows;
+            if row.listed {
+                x = pad + column;
             }
             if let Some(font) = font {
                 if let Some(label) = row.label {
@@ -592,8 +599,9 @@ mod tests {
     #[test]
     fn a_fired_shape_takes_one_arrow_s_room() {
         let config = Config::parse(
-            "[[gesture]]\nshape = \"circle\"\nname = \"Menu\"\naction = { keys = \"F10\" }\n\n\
-             [[gesture]]\nstroke = \"DLURD\"\nname = \"Menu\"\naction = { keys = \"F10\" }",
+            // Names narrower than the main line, which sets the width.
+            "[[gesture]]\nshape = \"circle\"\nname = \".\"\naction = { keys = \"F10\" }\n\n\
+             [[gesture]]\nstroke = \"DLURD\"\nname = \".\"\naction = { keys = \"F10\" }",
             &[],
             &[],
         )
@@ -632,8 +640,10 @@ mod tests {
     #[test]
     fn a_wheel_takes_its_arrow_s_room_and_a_repeat_counts() {
         let config = Config::parse(
-            "[[gesture]]\nwheel = \"up\"\nname = \"Louder\"\naction = { keys = \"F5\" }\n\n\
-             [[gesture]]\nclick = \"left\"\nname = \"Louder\"\naction = { keys = \"F6\" }",
+            // Names narrower than the main line, and one that's wider.
+            "[[gesture]]\nwheel = \"up\"\nname = \".\"\naction = { keys = \"F5\" }\n\n\
+             [[gesture]]\nclick = \"left\"\nname = \".\"\naction = { keys = \"F6\" }\n\n\
+             [[gesture]]\nwheel = \"down\"\nname = \"Quieter\"\naction = { keys = \"F7\" }",
             &[],
             &[],
         )
@@ -651,7 +661,33 @@ mod tests {
             more.abs() <= 1.0,
             "a wheel is a mouse and three quarters of an arrow wider"
         );
-        assert!(width(wheel, 3) > width(wheel, 1), "3× after the label");
-        assert_eq!(width(wheel, 1), width(wheel, 0), "once is no count");
+        let quieter = &config.gestures[2];
+        assert!(width(quieter, 3) > width(quieter, 1), "3× after the name");
+        assert_eq!(width(quieter, 1), width(quieter, 0), "once is no count");
+    }
+
+    #[test]
+    fn the_name_is_listed_beside_the_main_line() {
+        let config = Config::parse(
+            "[[gesture]]\nstroke = \"D\"\nname = \"Reload\"\naction = { keys = \"F5\" }",
+            &[],
+            &[],
+        )
+        .unwrap();
+        let stroke: Stroke = "D".parse().unwrap();
+        let mut painter = Painter::default();
+        let mut paint_at = |position: &str| {
+            let style = HintStyle {
+                position: position.parse().unwrap(),
+                ..config.hint.clone()
+            };
+            painter
+                .paint(&Hint::fired(&stroke, &config.gestures[0], 1), &style, 1.0)
+                .unwrap()
+        };
+        let (bottom, top) = (paint_at("bottom"), paint_at("top"));
+        assert!(bottom.height as f32 > bottom.main.1, "a row beside the arrows");
+        assert!(bottom.main.0 > 0.0, "at the bottom, the name goes above");
+        assert_eq!(top.main.0, 0.0, "elsewhere, below");
     }
 }

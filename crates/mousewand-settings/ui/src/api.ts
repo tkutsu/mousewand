@@ -56,7 +56,10 @@ export type Hint = {
   position: string;
   font: string;
   size: number;
+  /** The gesture's name and the next moves. */
+  nextSize: number;
   text: string;
+  nextText: string;
   glyph: string;
   /** The arrows and text once the stroke matches nothing. */
   failed: string;
