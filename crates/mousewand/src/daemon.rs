@@ -33,7 +33,7 @@ struct Active {
     focused: bool,
     stroke: Stroke,
     /// What fired last, for the hint.
-    fired: Option<String>,
+    fired: Option<Gesture>,
 }
 
 /// How long a command in a sequence may run before the next step goes on
@@ -225,7 +225,7 @@ impl Daemon {
             return;
         }
         let hint = match (&active.fired, ended) {
-            (Some(label), _) => Hint::fired(&active.stroke, label.clone()),
+            (Some(gesture), _) => Hint::fired(&active.stroke, gesture),
             (None, true) => Hint::missed(&active.stroke),
             (None, false) => {
                 let candidates: Vec<Gesture> = active.session.candidates().cloned().collect();
@@ -249,11 +249,7 @@ impl Daemon {
         for fire in step(&mut active.session) {
             if let Fire::Run(action) = &fire {
                 fired = true;
-                active.fired = active
-                    .session
-                    .candidates()
-                    .find(|g| &g.action == action)
-                    .map(Gesture::label);
+                active.fired = active.session.candidates().find(|g| &g.action == action).cloned();
                 // Shift held on the keyboard would turn ctrl+t into
                 // ctrl+shift+t: keys wait until it's let go.
                 if !active.session.mods().is_empty() {

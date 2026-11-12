@@ -304,6 +304,7 @@ impl Trail for GnomeTrail {
         let json = serde_json::json!({
             "stroke": hint.stroke.to_string(),
             "label": hint.label,
+            "shape": hint.shape.as_ref().map(|s| s.outline()),
             "state": state,
             "next": next,
         });

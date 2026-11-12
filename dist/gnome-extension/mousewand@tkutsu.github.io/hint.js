@@ -2,6 +2,7 @@
 // it could still become, and what fired. It follows mousewand's own hint,
 // with St labels instead of a painted image, and fades with the trail.
 
+import Cairo from 'cairo';
 import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -28,6 +29,33 @@ const css = ([r, g, b, a], alpha = 1) =>
     `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a * alpha})`;
 const arrows = stroke => [...stroke].map(c => ARROWS[c] ?? '').join(' ');
 
+// A shape's outline, fitted into an arrow's square, in a finer line so its
+// detail stays open.
+function shapeArea(outline, size, [r, g, b, a]) {
+    const xs = outline.map(p => p[0]);
+    const ys = outline.map(p => p[1]);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const span = Math.max(x1 - x0, y1 - y0) || 1;
+    const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2];
+    const area = new St.DrawingArea({
+        y_align: Clutter.ActorAlign.CENTER,
+        style: `width: ${size}px; height: ${size}px;`,
+    });
+    area.connect('repaint', () => {
+        const cr = area.get_context();
+        const [w] = area.get_surface_size();
+        const at = (x, y) => [w * (0.5 + (x - cx) / span * 0.84), w * (0.5 + (y - cy) / span * 0.84)];
+        outline.forEach(([x, y], i) => i ? cr.lineTo(...at(x, y)) : cr.moveTo(...at(x, y)));
+        cr.setSourceRGBA(r, g, b, a);
+        cr.setLineWidth(w * 0.09);
+        cr.setLineCap(Cairo.LineCap.ROUND);
+        cr.setLineJoin(Cairo.LineJoin.ROUND);
+        cr.stroke();
+        cr.$dispose();
+    });
+    return area;
+}
+
 export class Hint {
     constructor() {
         this._style = DEFAULT_STYLE;
@@ -38,7 +66,8 @@ export class Hint {
         this._style = {...DEFAULT_STYLE, ...style};
     }
 
-    // `hint`: {stroke, label, state: 'drawing' | 'fired' | 'missed', next: [[rest, label]]}.
+    // `hint`: {stroke, label, shape: [[x, y]] | null, state: 'drawing' | 'fired' | 'missed',
+    // next: [[rest, label]]}. `shape` is the outline of a shape that fired.
     show(hint) {
         const s = this._style;
         if (!s.enabled)
@@ -51,7 +80,7 @@ export class Hint {
             missed: [css(s.failed), css(s.failed), hint.label],
         }[hint.state];
         const main = hint.stroke || label
-            ? {arrows: arrows(hint.stroke), label, size: s.size, arrow, text}
+            ? {arrows: arrows(hint.stroke), shape: hint.shape, label, size: s.size, arrow, text}
             : null;
         const next = hint.next.map(([rest, l]) => ({
             arrows: arrows(rest), label: l, size: s.size * 0.82,
@@ -80,7 +109,10 @@ export class Hint {
             });
             if (!row.next)
                 this._main = line;
-            if (row.arrows || row.next) {
+            // Only a fired hint has a shape, so it's in the glyph color.
+            if (row.shape) {
+                line.add_child(shapeArea(row.shape, row.size, s.glyph));
+            } else if (row.arrows || row.next) {
                 line.add_child(new St.Label({
                     text: row.arrows,
                     y_align: Clutter.ActorAlign.CENTER,

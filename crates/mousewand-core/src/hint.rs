@@ -2,6 +2,7 @@
 //! could still become, and what fired.
 
 use crate::config::{Gesture, Input};
+use crate::shape::Shape;
 use crate::stroke::Stroke;
 
 /// How many possible next moves the hint lists at most.
@@ -12,6 +13,8 @@ pub struct Hint {
     pub stroke: Stroke,
     /// The gesture the stroke matches, or the one that fired.
     pub label: Option<String>,
+    /// The shape that fired, shown in place of the stroke's arrows.
+    pub shape: Option<Shape>,
     pub state: State,
     /// Gestures the stroke could still become: the rest of each stroke and
     /// its label, shortest first.
@@ -55,15 +58,20 @@ impl Hint {
         Hint {
             stroke: stroke.clone(),
             label,
+            shape: None,
             state: State::Drawing,
             next,
         }
     }
 
-    pub fn fired(stroke: &Stroke, label: String) -> Hint {
+    pub fn fired(stroke: &Stroke, gesture: &Gesture) -> Hint {
         Hint {
             stroke: stroke.clone(),
-            label: Some(label),
+            label: Some(gesture.label()),
+            shape: match &gesture.input {
+                Input::Shape(shape) => Some(shape.clone()),
+                _ => None,
+            },
             state: State::Fired,
             next: Vec::new(),
         }
@@ -73,6 +81,7 @@ impl Hint {
         Hint {
             stroke: stroke.clone(),
             label: None,
+            shape: None,
             state: State::Missed,
             next: Vec::new(),
         }
@@ -155,6 +164,23 @@ mod tests {
             Hint::drawing(&gestures(), &Stroke::default(), true).state,
             State::Drawing
         );
+    }
+
+    #[test]
+    fn a_fired_shape_shows_instead_of_its_stroke() {
+        let config = Config::parse(
+            "[[gesture]]\nshape = \"circle\"\nname = \"Menu\"\naction = { keys = \"F10\" }",
+            &[],
+            &[],
+        )
+        .unwrap();
+        let hint = Hint::fired(&s("DLUR"), &config.gestures[0]);
+        assert_eq!(hint.label.as_deref(), Some("Menu"));
+        assert!(
+            hint.shape
+                .is_some_and(|s| s.name == "circle" && !s.outline().is_empty())
+        );
+        assert_eq!(Hint::fired(&s("D"), &gestures()[0]).shape, None);
     }
 
     #[test]
