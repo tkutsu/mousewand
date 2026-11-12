@@ -1,8 +1,7 @@
 //! What the hint shows: the stroke so far, the gesture it matches, what it
-//! could still become, and what fired.
+//! could still become, and what fired, how many times.
 
 use crate::config::{Gesture, Input};
-use crate::shape::Shape;
 use crate::stroke::Stroke;
 
 /// How many possible next moves the hint lists at most.
@@ -13,12 +12,16 @@ pub struct Hint {
     pub stroke: Stroke,
     /// The gesture the stroke matches, or the one that fired.
     pub label: Option<String>,
-    /// The shape that fired, shown in place of the stroke's arrows.
-    pub shape: Option<Shape>,
+    /// What fired when it isn't a stroke, shown in place of the stroke's
+    /// arrows: a shape, a wheel notch or a click.
+    pub input: Option<Input>,
+    /// How many times in a row it fired: more than once is a repeat.
+    pub count: u32,
     pub state: State,
-    /// Gestures the stroke could still become: the rest of each stroke and
-    /// its label, shortest first.
-    pub next: Vec<(Stroke, String)>,
+    /// Gestures the stroke could still become, shortest first: the rest of
+    /// each stroke and its label. Before any stroke, wheel and click
+    /// gestures too.
+    pub next: Vec<(Input, String)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,32 +49,43 @@ impl Hint {
             return Hint::missed(stroke);
         }
         let label = strokes().find(|(s, _)| *s == stroke).map(|(_, g)| g.label());
-        let mut next: Vec<(Stroke, String)> = match next {
-            true => strokes()
-                .filter(|(s, _)| s.0.len() > stroke.0.len() && s.0.starts_with(&stroke.0))
-                .map(|(s, g)| (Stroke(s.0[stroke.0.len()..].to_vec()), g.label()))
-                .collect(),
+        let rests = strokes()
+            .filter(|(s, _)| s.0.len() > stroke.0.len() && s.0.starts_with(&stroke.0))
+            .map(|(s, g)| (Input::Stroke(Stroke(s.0[stroke.0.len()..].to_vec())), g.label()));
+        let mouse = gestures
+            .iter()
+            .filter(|g| stroke.0.is_empty() && matches!(g.input, Input::Wheel(_) | Input::Click(_)))
+            .map(|g| (g.input.clone(), g.label()));
+        let mut next: Vec<(Input, String)> = match next {
+            true => rests.chain(mouse).collect(),
             false => Vec::new(),
         };
-        next.sort_by_key(|(rest, _)| rest.0.len());
+        // A notch or click is one move, like one arrow.
+        next.sort_by_key(|(input, _)| match input {
+            Input::Stroke(rest) => rest.0.len(),
+            _ => 1,
+        });
         next.truncate(MAX_NEXT);
         Hint {
             stroke: stroke.clone(),
             label,
-            shape: None,
+            input: None,
+            count: 0,
             state: State::Drawing,
             next,
         }
     }
 
-    pub fn fired(stroke: &Stroke, gesture: &Gesture) -> Hint {
+    /// `gesture` fired, `count` times in a row.
+    pub fn fired(stroke: &Stroke, gesture: &Gesture, count: u32) -> Hint {
         Hint {
             stroke: stroke.clone(),
             label: Some(gesture.label()),
-            shape: match &gesture.input {
-                Input::Shape(shape) => Some(shape.clone()),
-                _ => None,
+            input: match &gesture.input {
+                Input::Stroke(_) => None,
+                input => Some(input.clone()),
             },
+            count,
             state: State::Fired,
             next: Vec::new(),
         }
@@ -81,7 +95,8 @@ impl Hint {
         Hint {
             stroke: stroke.clone(),
             label: None,
-            shape: None,
+            input: None,
+            count: 0,
             state: State::Missed,
             next: Vec::new(),
         }
@@ -139,7 +154,10 @@ mod tests {
         assert_eq!(hint.label.as_deref(), Some("Reload"));
         assert_eq!(
             hint.next,
-            [(s("R"), "Close tab".to_string()), (s("RU"), "ctrl+shift+t".to_string())]
+            [
+                (Input::Stroke(s("R")), "Close tab".to_string()),
+                (Input::Stroke(s("RU")), "ctrl+shift+t".to_string())
+            ]
         );
         let hint = Hint::drawing(&gestures(), &s("DRU"), true);
         assert_eq!(hint.label.as_deref(), Some("ctrl+shift+t"));
@@ -174,19 +192,37 @@ mod tests {
             &[],
         )
         .unwrap();
-        let hint = Hint::fired(&s("DLUR"), &config.gestures[0]);
+        let hint = Hint::fired(&s("DLUR"), &config.gestures[0], 1);
         assert_eq!(hint.label.as_deref(), Some("Menu"));
-        assert!(
-            hint.shape
-                .is_some_and(|s| s.name == "circle" && !s.outline().is_empty())
-        );
-        assert_eq!(Hint::fired(&s("D"), &gestures()[0]).shape, None);
+        assert!(matches!(
+            hint.input,
+            Some(Input::Shape(s)) if s.name == "circle" && !s.outline().is_empty()
+        ));
+        assert_eq!(Hint::fired(&s("D"), &gestures()[0], 1).input, None);
     }
 
     #[test]
-    fn empty_stroke_lists_every_stroke() {
+    fn a_wheel_shows_and_counts() {
+        let hint = Hint::fired(&s("D"), &gestures()[3], 3);
+        assert_eq!(hint.input, Some(Input::Wheel(crate::Wheel::Up)));
+        assert_eq!(hint.count, 3);
+    }
+
+    #[test]
+    fn empty_stroke_lists_every_stroke_and_the_wheel() {
         let hint = Hint::drawing(&gestures(), &Stroke::default(), true);
-        assert_eq!(hint.next.len(), 3);
-        assert_eq!(hint.next[0].0, s("D"));
+        let next: Vec<&Input> = hint.next.iter().map(|(input, _)| input).collect();
+        assert_eq!(
+            next,
+            [
+                &Input::Stroke(s("D")),
+                &Input::Wheel(crate::Wheel::Up),
+                &Input::Stroke(s("DR")),
+                &Input::Stroke(s("DRU"))
+            ]
+        );
+        // Mid-stroke, only strokes.
+        let hint = Hint::drawing(&gestures(), &s("D"), true);
+        assert!(hint.next.iter().all(|(input, _)| matches!(input, Input::Stroke(_))));
     }
 }

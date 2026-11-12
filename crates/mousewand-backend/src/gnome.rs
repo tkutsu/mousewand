@@ -8,8 +8,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, bail};
+use mousewand_core::config::BTN_LEFT;
 use mousewand_core::hint::{self, Hint};
-use mousewand_core::{Align, HintStyle, Theme, Trail};
+use mousewand_core::{Align, HintStyle, Input, Theme, Trail, Wheel};
 use serde::Deserialize;
 use zbus::blocking::Connection;
 
@@ -296,15 +297,24 @@ impl Trail for GnomeTrail {
             hint::State::Fired => "fired",
             hint::State::Missed => "missed",
         };
-        let next: Vec<(String, String)> = hint
+        // A wheel or click move has no rest of a stroke.
+        let next: Vec<(String, &str, Option<&str>)> = hint
             .next
             .iter()
-            .map(|(rest, label)| (rest.to_string(), label.clone()))
+            .map(|(input, label)| match input {
+                Input::Stroke(rest) => (rest.to_string(), label.as_str(), None),
+                _ => (String::new(), label.as_str(), mouse(input)),
+            })
             .collect();
         let json = serde_json::json!({
             "stroke": hint.stroke.to_string(),
             "label": hint.label,
-            "shape": hint.shape.as_ref().map(|s| s.outline()),
+            "shape": match &hint.input {
+                Some(Input::Shape(shape)) => Some(shape.outline()),
+                _ => None,
+            },
+            "mouse": hint.input.as_ref().and_then(mouse),
+            "count": hint.count,
             "state": state,
             "next": next,
         });
@@ -322,5 +332,18 @@ impl Trail for GnomeTrail {
             "glow": theme.glow,
         });
         self.send("SetTheme", &(json.to_string(),));
+    }
+}
+
+/// The mouse the extension draws for a wheel or click gesture.
+fn mouse(input: &Input) -> Option<&'static str> {
+    match input {
+        Input::Wheel(Wheel::Up) => Some("wheel up"),
+        Input::Wheel(Wheel::Down) => Some("wheel down"),
+        Input::Wheel(Wheel::Left) => Some("wheel left"),
+        Input::Wheel(Wheel::Right) => Some("wheel right"),
+        Input::Click(BTN_LEFT) => Some("click left"),
+        Input::Click(_) => Some("click right"),
+        Input::Stroke(_) | Input::Shape(_) => None,
     }
 }
