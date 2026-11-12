@@ -364,6 +364,7 @@ mod tests {
 
     #[test]
     fn wheel_and_click_fire_each_time_and_skip_the_stroke() {
+
         let mut session = session();
         assert_eq!(session.wheel(Wheel::Down), [command("scrolled")]);
         assert_eq!(session.wheel(Wheel::Down), [command("scrolled")]);

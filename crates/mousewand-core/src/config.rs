@@ -1196,11 +1196,7 @@ mod tests {
         let c = Config::parse(&gesture("triangle"), &[], std::slice::from_ref(&triangle)).unwrap();
         let names: Vec<&str> = c.shapes.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names.len(), shape::BUILT_IN.len());
-        assert_eq!(
-            names[..2],
-            ["circle", "square"],
-            "a taught shape replaces the built-in one"
-        );
+        assert_eq!(names[..2], ["circle", "square"], "a taught shape replaces the built-in one");
         assert_eq!(names.last(), Some(&"triangle"));
         assert!(matches!(&c.gestures[0].input, Input::Shape(s) if s.name == "triangle"));
 
@@ -1466,11 +1462,7 @@ mod tests {
             ])
         );
         assert_eq!(c.gestures[0].label(), "ctrl+c, then wl-paste | wc -c");
-        assert_eq!(
-            c.gestures[1].action,
-            Action::Keys("ctrl+t".parse().unwrap()),
-            "one step is just that step"
-        );
+        assert_eq!(c.gestures[1].action, Action::Keys("ctrl+t".parse().unwrap()), "one step is just that step");
 
         let bad = |a: &str| Config::parse(&format!("[[gesture]]\nstroke = \"L\"\naction = {a}"), &[], &[]).unwrap_err();
         assert!(bad("[]").contains("at least one step"));
@@ -1508,15 +1500,10 @@ mod tests {
         // An app overriding the plain L leaves the shifted one alone.
         let app = "[[gesture]]\nstroke = \"L\"\naction = { keys = \"a\" }";
         let c = Config::parse(main, &[("x".into(), app.into())], &[]).unwrap();
-        let ls: Vec<_> = c
-            .gestures_for("x")
-            .into_iter()
-            .filter(|g| g.input == stroke("L"))
-            .collect();
+        let ls: Vec<_> = c.gestures_for("x").into_iter().filter(|g| g.input == stroke("L")).collect();
         assert_eq!(ls.len(), 2);
 
-        let bad =
-            |g: &str| Config::parse(&format!("[[gesture]]\n{g}\naction = {{ keys = \"a\" }}"), &[], &[]).unwrap_err();
+        let bad = |g: &str| Config::parse(&format!("[[gesture]]\n{g}\naction = {{ keys = \"a\" }}"), &[], &[]).unwrap_err();
         assert!(bad("stroke = \"L\"\nwith = \"shift\"\nrepeat = true").contains("don't repeat"));
         assert!(bad("wheel = \"up\"\nwith = \"ctrl\"").contains("strokes and shapes"));
         assert!(bad("stroke = \"L\"\nwith = \"q\"").contains("isn't a modifier"));
