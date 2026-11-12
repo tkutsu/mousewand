@@ -301,7 +301,11 @@ mod tests {
         assert_eq!(m.tick(ms(299)), []);
         assert_eq!(m.tick(ms(300)), [Press]);
         assert_eq!(m.deadline(), None);
-        assert_eq!(m.motion(-50.0, 0.0, ms(0)), [], "a hold drags; it never turns into a gesture");
+        assert_eq!(
+            m.motion(-50.0, 0.0, ms(0)),
+            [],
+            "a hold drags; it never turns into a gesture"
+        );
         assert_eq!(m.release(), [Release]);
     }
 
@@ -387,7 +391,11 @@ mod tests {
     #[test]
     fn wheel_and_buttons_belong_to_the_gesture() {
         let mut m = machine();
-        assert_eq!(m.claim(Extra::Wheel(crate::Wheel::Up), ms(0)), None, "idle: scroll normally");
+        assert_eq!(
+            m.claim(Extra::Wheel(crate::Wheel::Up), ms(0)),
+            None,
+            "idle: scroll normally"
+        );
 
         m.press(ms(0));
         assert_eq!(
