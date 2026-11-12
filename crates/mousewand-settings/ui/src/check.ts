@@ -9,9 +9,8 @@ export function problems(gestures: Gesture[]): (string | null)[] {
     if (g.input === "stroke" && !g.value) return "Type a stroke, like DR for down, then right.";
     const same = gestures.findIndex((o) => drawnAs(o) === drawnAs(g));
     if (same < i) return `Gesture ${same + 1} already uses this ${g.input}${g.with ? " with these keys" : ""}.`;
-    if (g.kind === "hold" && !g.hold?.trim()) return "Choose the keys to hold down.";
     if (g.kind === "hold" && (g.steps.length > 1 || g.steps[0]?.action !== "keys")) {
-      return "Holding keys works with one step that presses keys.";
+      return "Keeping keys down works with one step that presses keys.";
     }
     const { steps } = g;
     for (const [n, step] of steps.entries()) {

@@ -81,6 +81,15 @@ export type ShapeInfo = {
   outline: [number, number][];
 };
 
+/** A trail theme, enough to preview it. */
+export type ThemeInfo = {
+  name: string;
+  /** sRGB, 0–1, head to tail. Empty if its file has an error. */
+  colors: [number, number, number][];
+  width: number;
+  glow: number;
+};
+
 export type State = {
   dir: string;
   settings: Settings;
@@ -88,7 +97,7 @@ export type State = {
   app: App | null;
   /** The gestures over this app's own window. */
   settingsApp: App;
-  themes: string[];
+  themes: ThemeInfo[];
   /** The built-in shapes, then the drawn ones. */
   shapes: ShapeInfo[];
   presets: Preset[];
