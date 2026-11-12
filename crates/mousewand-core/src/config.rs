@@ -145,7 +145,7 @@ impl Default for Settings {
             trigger: Trigger::default(),
             threshold: 8.0,
             hold_ms: 300,
-            cancel_ms: 700,
+            cancel_ms: 0,
             min_segment: 30.0,
             devices: Vec::new(),
             theme: "default".into(),
@@ -1379,7 +1379,7 @@ mod tests {
         let c = Config::parse(MAIN, &[("blender".into(), off.into())], &[]).unwrap();
         assert!(!c.enabled_for("Blender"));
         assert!(c.enabled_for("firefox"));
-        assert_eq!(c.settings.cancel_ms, 700);
+        assert_eq!(c.settings.cancel_ms, 0);
     }
 
     #[test]

@@ -68,11 +68,12 @@ export const COMMON: Group[] = [
   {
     title: "Selected Text",
     actions: [
-      command("Copy selection", "wl-paste --primary | wl-copy"),
+      command("Copy selection", 'printf %s "$MOUSEWAND_SELECTION" | wl-copy'),
       command(
         "Search the web for it",
-        'xdg-open "https://duckduckgo.com/?q=$(wl-paste --primary --no-newline | jq -sRr @uri)"',
+        'xdg-open "https://duckduckgo.com/?q=$(printf %s "$MOUSEWAND_SELECTION" | jq -sRr @uri)"',
       ),
+      command("Open it as a link", 'xdg-open "$MOUSEWAND_SELECTION"'),
     ],
   },
 ];

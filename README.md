@@ -97,7 +97,8 @@ A stroke or shape can also need keys held on the keyboard, so one stroke can do 
 The action is one of these:
 
 - `keys = "ctrl+shift+t"`: a key combo for the window you drew over. Keys are positions on a US keyboard, whatever your layout.
-- `command = "..."`: a shell command. It gets `$MOUSEWAND_CLASS` and `$MOUSEWAND_TITLE`.
+- `command = "..."`: a shell command. It gets `$MOUSEWAND_CLASS` and `$MOUSEWAND_TITLE`, and the selected text in `$MOUSEWAND_SELECTION`. See [Using the selected text](#using-the-selected-text).
+
 - `dispatch = "..."`: a compositor command. See [Desktops](#desktops) for what each one takes.
 
 An action can also be a list of steps, run one after another. Each step waits for the one before it to finish, a command for up to 3 seconds, and `wait` pauses for that many milliseconds:
@@ -105,8 +106,8 @@ An action can also be a list of steps, run one after another. Each step waits fo
 ```toml
 [[gesture]]
 stroke = "UR"
-name = "Copy and search"
-action = [{ keys = "ctrl+c" }, { wait = 150 }, { command = 'xdg-open "https://duckduckgo.com/?q=$(wl-paste | jq -sRr @uri)"' }]
+name = "Duplicate tab"
+action = [{ keys = "ctrl+l" }, { wait = 50 }, { keys = "alt+Enter" }]
 ```
 
 A stroke can keep firing while you hold the trigger. With `repeat = true` it fires when it's recognized, again for every `step` pixels (80 by default) you keep moving in its last direction, and on every wheel notch, which suits scrubbing through tabs. With `hold` in the action it does the same and holds those keys down until you let go, which makes a real alt-tab:
@@ -198,7 +199,7 @@ These are the defaults:
 trigger = "middle"   # middle, back (mouse 4), forward (mouse 5), mouse6 to mouse8
 threshold = 8        # pixels to move before a press becomes a gesture
 hold_ms = 300        # holding still this long makes it a normal press
-cancel_ms = 700      # holding still this long mid-stroke cancels it; 0 never does
+cancel_ms = 0        # holding still this long mid-stroke cancels it, e.g. 700; 0 never does
 min_segment = 30     # shorter strokes are ignored as noise
 devices = []         # only use mice whose name contains one of these
 theme = "default"    # or a file in themes/, without .toml
@@ -239,18 +240,18 @@ glow = 0.9            # 0 is a plain line
 
 ### Using the selected text
 
-Commands can read the selection: `wl-paste --primary` prints it on Wayland, and `xclip -o` on X11.
+A command that mentions `$MOUSEWAND_SELECTION` gets the text you last selected in it, read as the gesture fires. That's the primary selection, which selecting text sets without copying it, from whichever window you selected in. mousewand reads it with `wl-paste` on Wayland and `xclip` on X11, so one of them has to be installed.
 
 ```toml
 [[gesture]]
 stroke = "UR"
 name = "Copy selection"
-action = { command = "wl-paste --primary | wl-copy" }
+action = { command = 'printf %s "$MOUSEWAND_SELECTION" | wl-copy' }
 
 [[gesture]]
 stroke = "UL"
 name = "Search selection"
-action = { command = 'xdg-open "https://duckduckgo.com/?q=$(wl-paste --primary --no-newline | jq -sRr @uri)"' }
+action = { command = 'xdg-open "https://duckduckgo.com/?q=$(printf %s "$MOUSEWAND_SELECTION" | jq -sRr @uri)"' }
 ```
 
 ## Desktops
@@ -306,7 +307,7 @@ The log says `can't read the keyboard` once if mousewand can't see which keys ar
 
 ### A stroke I gave up on fired anyway
 
-Holding still for `cancel_ms` cancels a stroke, and the hint says "Cancelled". A repeating gesture that has already taken over doesn't cancel.
+With `cancel_ms` set, holding still that long cancels a stroke, and the hint says "Cancelled". A repeating gesture that has already taken over doesn't cancel.
 
 ### A circle does something else
 

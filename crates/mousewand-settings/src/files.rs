@@ -443,7 +443,7 @@ fn edit_main(text: &str, settings: &Settings, global: &[Gesture]) -> Result<Stri
     doc["hold_ms"] = value(settings.hold_ms as i64);
     // Written once it's been changed, like `open_settings`.
     let cancel_ms = settings.cancel_ms as i64;
-    if cancel_ms != 700 || doc.contains_key("cancel_ms") {
+    if cancel_ms != 0 || doc.contains_key("cancel_ms") {
         doc["cancel_ms"] = value(cancel_ms);
     }
     doc["min_segment"] = value(settings.min_segment);
@@ -598,7 +598,7 @@ mod tests {
             target: "notify-send copied".into(),
         });
         let mut settings = state.settings.clone();
-        settings.cancel_ms = 0;
+        settings.cancel_ms = 700;
         dir.save(&settings, &[copy.clone()], std::slice::from_ref(&app)).unwrap();
 
         let main = std::fs::read_to_string(path.join("config.toml")).unwrap();
@@ -607,13 +607,13 @@ mod tests {
             main.contains("action = [{ keys = \"ctrl+c\" }, { wait = 150 }, { command = \"notify-send copied\" }]"),
             "{main}"
         );
-        assert!(main.contains("cancel_ms = 0"), "{main}");
+        assert!(main.contains("cancel_ms = 700"), "{main}");
         let blender = std::fs::read_to_string(path.join("apps/blender.toml")).unwrap();
         assert!(blender.contains("enabled = false"), "{blender}");
 
         let again = dir.load(Some("blender")).unwrap();
         assert_eq!(again.global, [copy]);
-        assert_eq!(again.settings.cancel_ms, 0);
+        assert_eq!(again.settings.cancel_ms, 700);
         let mut app = again.app.unwrap();
         assert!(!app.enabled);
         app.enabled = true;

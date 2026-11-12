@@ -47,3 +47,10 @@ action = { keys = "ctrl+Tab" }
 click = "right"
 name = "Reopen closed tab"
 action = { keys = "ctrl+shift+t" }
+
+# An action can be a list of steps, run in turn: focus the address bar,
+# then open what it holds in a new tab.
+[[gesture]]
+stroke = "DU"
+name = "Duplicate tab"
+action = [{ keys = "ctrl+l" }, { wait = 50 }, { keys = "alt+Enter" }]
