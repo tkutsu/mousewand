@@ -9,6 +9,10 @@ use crate::trail::{self, Style, Trail, Vertex};
 
 pub struct Scene {
     trail: Trail,
+    /// The stroke drawn before the compositor first said where the pointer
+    /// is, from the mouse's own motion, relative to where it began: points
+    /// and their times. `None` once placed.
+    unplaced: Option<Vec<(f32, f32, f32)>>,
     /// Ring pulses: when, in seconds since `start`, and where.
     pulses: Vec<(f32, (f32, f32))>,
     start: Instant,
@@ -19,17 +23,37 @@ impl Scene {
     pub fn new() -> Self {
         Scene {
             trail: Trail::default(),
+            unplaced: Some(vec![(0.0, 0.0, 0.0)]),
             pulses: Vec::new(),
             start: Instant::now(),
             ended: None,
         }
     }
 
-    /// A pointer position, in surface coordinates. Ignored after release.
-    pub fn push(&mut self, x: f32, y: f32) {
-        if self.ended.is_none() {
-            self.trail.push(x, y, self.start.elapsed().as_secs_f32());
+    /// The mouse moved by this much. Surfaces can take a while to appear,
+    /// longer on a busy compositor, and get no pointer positions until then:
+    /// motion fills in the stroke drawn meanwhile.
+    pub fn moved(&mut self, dx: f32, dy: f32) {
+        let t = self.start.elapsed().as_secs_f32();
+        if let Some(path) = &mut self.unplaced {
+            let &(x, y, _) = path.last().expect("starts with a point");
+            path.push((x + dx, y + dy, t));
         }
+    }
+
+    /// A pointer position, in surface coordinates. Ignored after release.
+    /// The first one places the stroke drawn so far, ending here.
+    pub fn push(&mut self, x: f32, y: f32) {
+        if self.ended.is_some() {
+            return;
+        }
+        if let Some(path) = self.unplaced.take() {
+            let &(ex, ey, _) = path.last().expect("starts with a point");
+            for (px, py, t) in path {
+                self.trail.push(x - ex + px, y - ey + py, t);
+            }
+        }
+        self.trail.push(x, y, self.start.elapsed().as_secs_f32());
     }
 
     /// Pulses a ring at the head.
@@ -84,5 +108,37 @@ impl Scene {
                 .map(|&(t, center)| trail::ring(center, now - t, size, &style)),
         );
         Some(strips)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn motion_before_the_first_position_is_placed_to_end_there() {
+        let mut scene = Scene::new();
+        scene.moved(0.0, 60.0);
+        scene.moved(80.0, 0.0);
+        scene.push(500.0, 400.0);
+        assert_eq!(scene.trail.points(), [(420.0, 340.0), (420.0, 400.0), (500.0, 400.0)]);
+    }
+
+    #[test]
+    fn motion_after_the_first_position_is_left_to_the_compositor() {
+        let mut scene = Scene::new();
+        scene.push(500.0, 400.0);
+        scene.moved(80.0, 0.0);
+        scene.push(510.0, 400.0);
+        assert_eq!(scene.trail.points(), [(500.0, 400.0), (510.0, 400.0)]);
+    }
+
+    #[test]
+    fn nothing_is_placed_after_release() {
+        let mut scene = Scene::new();
+        scene.moved(0.0, 60.0);
+        scene.end(true);
+        scene.push(500.0, 400.0);
+        assert_eq!(scene.trail.points(), []);
     }
 }
