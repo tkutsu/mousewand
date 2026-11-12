@@ -1,0 +1,7 @@
+# Gruvbox: warm yellow, orange and purple.
+color = ["#fabd2f", "#fe8019", "#d3869b"]
+rejected = "#928374"
+width = 26
+life_ms = 550
+fade_ms = 350
+glow = 0.6

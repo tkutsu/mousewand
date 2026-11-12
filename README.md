@@ -229,7 +229,17 @@ radius = 14
 
 ### Themes
 
-Built in: default, ember, fire, laser, mint, rainbow, sakura and sunset. To make your own, add a file to `themes/`. A file with a built-in name replaces that theme.
+Built in:
+
+- Cool: default, ocean, aurora, mint, matrix
+- Warm: ember, fire, sunset, gold
+- Soft: sakura, cotton-candy, lavender
+- Lines: laser, ink
+- Bright: neon, rainbow
+- Flags: pride, trans
+- Desktop color schemes: catppuccin, dracula, gruvbox, nord, tokyo-night
+
+To make your own, add a file to `themes/`. A file with a built-in name replaces that theme.
 
 ```toml
 # ~/.config/mousewand/themes/ember.toml

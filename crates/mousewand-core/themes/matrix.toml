@@ -1,0 +1,6 @@
+# Terminal green, bright at the head.
+color = ["#d8ffd8", "#39ff14", "#0b6b0b"]
+width = 20
+life_ms = 500
+fade_ms = 300
+glow = 0.8

@@ -1,0 +1,6 @@
+# Sea foam at the head, sinking into deep water.
+color = ["#e0fbff", "#4fd1ff", "#1f6feb", "#0b3d91"]
+width = 28
+life_ms = 600
+fade_ms = 350
+glow = 0.7

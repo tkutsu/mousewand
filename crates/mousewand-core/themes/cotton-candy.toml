@@ -1,0 +1,7 @@
+# Pastel pink, periwinkle and sky.
+color = ["#ffd1f0", "#c7d2ff", "#a0f0ff"]
+rejected = "#8f8aa3"
+width = 30
+life_ms = 600
+fade_ms = 350
+glow = 0.7

@@ -1,0 +1,7 @@
+# The rainbow flag's six stripes, head to tail.
+color = ["#e40303", "#ff8c00", "#ffed00", "#008026", "#24408e", "#732982"]
+rejected = "#7f8ca3"
+width = 30
+life_ms = 700
+fade_ms = 400
+glow = 0.6

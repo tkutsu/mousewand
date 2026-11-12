@@ -1,0 +1,7 @@
+# Dracula: pink, purple and cyan.
+color = ["#ff79c6", "#bd93f9", "#8be9fd"]
+rejected = "#ff5555"
+width = 26
+life_ms = 550
+fade_ms = 350
+glow = 0.8
