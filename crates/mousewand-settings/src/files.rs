@@ -315,22 +315,22 @@ impl Dir {
         std::fs::remove_file(&path).map_err(|e| format!("removing {}: {e}", path.display()))
     }
 
-    /// "default", then the built-in themes and the files, by name.
+    /// "default", the built-in themes in their order, then the other files
+    /// by name.
     fn themes(&self) -> Vec<ThemeInfo> {
-        let mut names: Vec<String> = BUILT_IN_THEMES.iter().map(|(name, _)| name.to_string()).collect();
-        if let Ok(entries) = std::fs::read_dir(self.0.join("themes")) {
-            for path in entries.filter_map(|e| Some(e.ok()?.path())) {
-                if path.extension().is_some_and(|ext| ext == "toml") {
-                    names.push(path.file_stem().unwrap_or_default().to_string_lossy().into_owned());
-                }
-            }
-        }
-        names.retain(|t| t != "default");
-        names.sort();
-        names.dedup();
-        names.insert(0, "default".to_string());
-        names
+        let mut files: Vec<String> = std::fs::read_dir(self.0.join("themes"))
             .into_iter()
+            .flatten()
+            .filter_map(|e| Some(e.ok()?.path()))
+            .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
+            .map(|path| path.file_stem().unwrap_or_default().to_string_lossy().into_owned())
+            .filter(|name| name != "default" && !BUILT_IN_THEMES.iter().any(|(n, _)| n == name))
+            .collect();
+        files.sort();
+        let built_in = BUILT_IN_THEMES.iter().map(|(name, _)| name.to_string());
+        std::iter::once("default".to_string())
+            .chain(built_in)
+            .chain(files)
             .map(|name| {
                 let theme = self.theme(&name).ok();
                 ThemeInfo {

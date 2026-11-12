@@ -1,0 +1,7 @@
+# Shiny gold, burnishing toward the tail.
+color = ["#fff6c8", "#ffd34d", "#b8860b"]
+rejected = "#7f8ca3"
+width = 28
+life_ms = 550
+fade_ms = 350
+glow = 0.8

@@ -1,0 +1,7 @@
+# Nord's frost blues.
+color = ["#8fbcbb", "#88c0d0", "#81a1c1", "#5e81ac"]
+rejected = "#bf616a"
+width = 26
+life_ms = 550
+fade_ms = 350
+glow = 0.6

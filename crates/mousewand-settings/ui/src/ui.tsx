@@ -41,22 +41,23 @@ export function Row({ label, hint, children }: { label: ReactNode; hint?: ReactN
   );
 }
 
-/** A macOS segmented control. */
+/** A macOS segmented control. Each option is a key, its label and maybe a tooltip. */
 export function Segmented<T extends string>({
   value,
   options,
   onChange,
 }: {
   value: T;
-  options: [T, string][];
+  options: [T, string, string?][];
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="inline-flex h-7 rounded-md bg-ink/[0.06] p-0.5">
-      {options.map(([key, label]) => (
+    <div className="inline-flex h-7 shrink-0 rounded-md bg-ink/[0.06] p-0.5">
+      {options.map(([key, label, title]) => (
         <button
           key={key}
           type="button"
+          title={title}
           className={`rounded-[5px] px-2.5 text-[12px] font-medium transition ${
             key === value ? "bg-control shadow-[0_0.5px_2px_rgb(0_0_0/0.18)]" : "text-ink-2 hover:text-ink"
           }`}

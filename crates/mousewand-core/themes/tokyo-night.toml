@@ -1,0 +1,7 @@
+# Tokyo Night: cyan, blue and purple.
+color = ["#7dcfff", "#7aa2f7", "#bb9af7"]
+rejected = "#f7768e"
+width = 26
+life_ms = 550
+fade_ms = 350
+glow = 0.7
