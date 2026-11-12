@@ -3,7 +3,7 @@
 echo "$1" > ~/compositor
 pkill -x foot
 pkill -x xterm
-for c in sway kwin_wayland gnome-shell niri cosmic-comp labwc xfwm4 Xorg; do
+for c in sway Hyprland kwin_wayland gnome-shell niri cosmic-comp labwc xfwm4 Xorg; do
   pkill -x "$c"
 done
 sleep 8

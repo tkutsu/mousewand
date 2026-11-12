@@ -3,3 +3,5 @@
 node_modules/
 /crates/mousewand-settings/ui/dist/
 /crates/mousewand-settings/gen/
+/crates/mousewand-settings/ui/test-results/
+/crates/mousewand-settings/ui/playwright-report/

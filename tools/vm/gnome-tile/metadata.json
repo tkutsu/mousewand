@@ -1,0 +1,6 @@
+{
+  "uuid": "mousewand-tile@test",
+  "name": "mousewand test tiling",
+  "description": "Tiles the guest test's windows: foot on the left, other on the right.",
+  "shell-version": ["46", "47", "48", "49", "50", "51"]
+}
