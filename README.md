@@ -87,7 +87,7 @@ Without `match`, an app file applies to the window class in its file name. An ap
 
 The input is one of these:
 
-- `stroke = "DR"`: directions in the order you draw them. `U`, `D`, `L` and `R`, and diagonals as numpad digits: `7` up-left, `9` up-right, `1` down-left, `3` down-right.
+- `stroke = "DR"`: directions in the order you draw them. `U`, `D`, `L` and `R`, and diagonals as numpad digits: `7` up-left, `9` up-right, `1` down-left, `3` down-right. When nothing matches exactly, the closest stroke fires if it's close enough: a rounded corner drawn as `U9R` counts as `UR`. Repeat and hold strokes only match exactly.
 - `shape = "circle"`: a drawn shape. See [Shapes](#shapes).
 - `wheel = "up"`: a wheel notch while you hold the trigger, `up`, `down`, `left` or `right`. It fires on every notch.
 - `click = "right"`: a `left` or `right` click while you hold the trigger. With `right` as the trigger, only `left`.
@@ -314,7 +314,7 @@ The log should say `grabbed` and your mouse's name. If it doesn't, or it asks wh
 
 ### A stroke does nothing
 
-The log shows what mousewand saw, like `DUDU: no gesture`. Draw more slowly, or lower `min_segment`.
+The log shows what mousewand saw, like `DUDU: no gesture`, or `U9R: close to UR` when it fired the closest stroke. Draw more slowly, or lower `min_segment`.
 
 ### The wrong window reacts
 

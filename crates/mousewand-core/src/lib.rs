@@ -17,5 +17,5 @@ pub use config::{
 pub use hint::Hint;
 pub use machine::{Extra, Machine, Output};
 pub use session::{Fire, Session};
-pub use stroke::{Dir, Stroke};
+pub use stroke::{Dir, Drawing, Stroke};
 pub use trail::Trail;

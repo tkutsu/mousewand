@@ -1,15 +1,17 @@
 //! What one gesture fires, given the gestures for the window it started on.
 //!
 //! Oneshot strokes fire on release, and so do shapes, when no stroke
-//! matches what was drawn. Repeat and hold strokes fire as soon as
-//! they match and then lock: recognition stops, and every `step` of motion
-//! in the stroke's last direction, and every wheel notch, fires again.
-//! Wheel and click gestures fire on each notch or click.
+//! matches what was drawn. With neither, the oneshot stroke the drawing
+//! comes closest to fires, if it's close enough. Repeat and hold strokes
+//! fire as soon as they match exactly and then lock: recognition stops,
+//! and every `step` of motion in the stroke's last direction, and every
+//! wheel notch, fires again. Wheel and click gestures fire on each notch
+//! or click.
 
 use crate::config::{Action, Gesture, Input, Kind, Wheel};
 use crate::keys::{Combo, Mods};
-use crate::shape::{self, Point};
-use crate::stroke::{Dir, Stroke};
+use crate::shape;
+use crate::stroke::{Drawing, MAX_DEVIATION, Stroke};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Fire {
@@ -115,7 +117,7 @@ impl Session {
         self.locked = Some(Locked {
             action,
             held,
-            axis: unit(last),
+            axis: last.unit(),
             step,
             travel: 0.0,
         });
@@ -155,28 +157,45 @@ impl Session {
         self.fire_once(&Input::Click(button))
     }
 
-    /// The trigger was released with this final stroke and path. A stroke
-    /// that matches wins, being exact; else the shape the path looks like.
-    pub fn end(&mut self, stroke: &Stroke, path: &[Point]) -> Vec<Fire> {
+    /// The trigger was released with this drawing. A stroke that matches
+    /// wins, being exact; else the shape the path looks like; else the
+    /// closest stroke.
+    pub fn end(&mut self, drawing: &Drawing) -> Vec<Fire> {
         if self.locked.is_some() {
             return self.cancel();
         }
         // After a wheel or click gesture, the motion was incidental.
-        if self.fired || self.abandoned || stroke.is_empty() {
+        if self.fired || self.abandoned || drawing.stroke.is_empty() {
             return Vec::new();
         }
-        let input = Input::Stroke(stroke.clone());
-        if self.find(&input).is_some() {
-            return self.fire_once(&input);
+        let exact = Input::Stroke(drawing.stroke.clone());
+        if self.find(&exact).is_some() {
+            return self.fire_once(&exact);
         }
         let shapes = self.candidates().filter_map(|g| match &g.input {
             Input::Shape(shape) => Some(shape),
             _ => None,
         });
-        match shape::recognize(shapes, path).cloned() {
-            Some(shape) => self.fire_once(&Input::Shape(shape)),
+        let shape = shape::recognize(shapes, &drawing.path).cloned().map(Input::Shape);
+        match shape.or_else(|| self.closest(drawing)) {
+            Some(input) => self.fire_once(&input),
             None => Vec::new(),
         }
+    }
+
+    /// The oneshot stroke the drawing strays least from, within
+    /// [`MAX_DEVIATION`]. Repeat and hold strokes take only exact matches:
+    /// they lock mid-gesture, where the drawing isn't finished yet.
+    fn closest(&self, drawing: &Drawing) -> Option<Input> {
+        self.candidates()
+            .filter(|g| !g.kind.continuous())
+            .filter_map(|g| match &g.input {
+                Input::Stroke(stroke) => Some((drawing.deviation(stroke), &g.input)),
+                _ => None,
+            })
+            .filter(|&(deviation, _)| deviation <= MAX_DEVIATION)
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, input)| input.clone())
     }
 
     /// Ends the gesture without firing; releases held keys.
@@ -205,24 +224,11 @@ impl Session {
     }
 }
 
-fn unit(dir: Dir) -> (f64, f64) {
-    let d = std::f64::consts::FRAC_1_SQRT_2;
-    match dir {
-        Dir::Up => (0.0, -1.0),
-        Dir::Down => (0.0, 1.0),
-        Dir::Left => (-1.0, 0.0),
-        Dir::Right => (1.0, 0.0),
-        Dir::UpLeft => (-d, -d),
-        Dir::UpRight => (d, -d),
-        Dir::DownLeft => (-d, d),
-        Dir::DownRight => (d, d),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Config;
+    use crate::stroke::{Dir, Recognizer};
 
     const GESTURES: &str = r#"
         [[gesture]]
@@ -257,6 +263,30 @@ mod tests {
         stroke.parse().unwrap()
     }
 
+    /// Straight lines, each `n` moves of `(dx, dy)`.
+    fn drawing(moves: &[(f64, f64, usize)]) -> Drawing {
+        let mut rec = Recognizer::new(30.0);
+        for &(dx, dy, n) in moves {
+            (0..n).for_each(|_| rec.push(dx, dy));
+        }
+        rec.finish()
+    }
+
+    /// The stroke drawn as it's spelled.
+    fn drawn(stroke: &str) -> Drawing {
+        let line = |d: Dir| (3.0 * d.unit().0, 3.0 * d.unit().1, 40);
+        let moves: Vec<_> = s(stroke).0.into_iter().map(line).collect();
+        let drawing = drawing(&moves);
+        assert_eq!(drawing.stroke, s(stroke));
+        drawing
+    }
+
+    /// A line `degrees` counter-clockwise from right.
+    fn line(degrees: f64) -> Drawing {
+        let (sin, cos) = degrees.to_radians().sin_cos();
+        drawing(&[(3.0 * cos, -3.0 * sin, 40)])
+    }
+
     fn keys(combo: &str) -> Fire {
         Fire::Run(Action::Keys(combo.parse().unwrap()))
     }
@@ -270,29 +300,44 @@ mod tests {
         let mut session = session();
         assert_eq!(session.stroke(&s("L")), []);
         assert!(!session.matched());
-        assert_eq!(session.end(&s("L"), &[]), [keys("alt+Left")]);
+        assert_eq!(session.end(&drawn("L")), [keys("alt+Left")]);
         assert!(session.matched());
     }
 
     #[test]
     fn shapes_fire_when_no_stroke_matches() {
-        let circle: Vec<Point> = (0..=40)
+        let moves: Vec<_> = (0..40)
             .map(|i| (i as f64 / 40.0 * std::f64::consts::TAU).sin_cos())
-            .map(|(y, x)| (100.0 * x, 60.0 * y))
+            .map(|(sin, cos)| (-15.7 * sin, 9.4 * cos, 1))
             .collect();
+        let circle = drawing(&moves);
         let settings = Fire::Run(Action::Command("mousewand-settings".into()));
         let gestures = Config::parse(GESTURES, &[], &[]).unwrap().gestures_for("x");
         let mut session = Session::new(gestures.clone());
-        assert_eq!(session.end(&s("L1D3R9U7"), &circle), [settings]);
+        assert_eq!(session.end(&circle), [settings]);
         // "L" is bound, so it wins whatever the path looks like.
         let mut session = Session::new(gestures);
-        assert_eq!(session.end(&s("L"), &circle), [keys("alt+Left")]);
+        let mut left = drawn("L");
+        left.path = circle.path;
+        assert_eq!(session.end(&left), [keys("alt+Left")]);
+    }
+
+    #[test]
+    fn the_closest_oneshot_fires_when_nothing_matches() {
+        // Left, leaning 25° up: drawn as 7, but closest to L.
+        let leaning = line(155.0);
+        assert_eq!(leaning.stroke, s("7"));
+        assert_eq!(session().end(&leaning), [keys("alt+Left")]);
+        // Leaning 40° up is too far from L.
+        assert_eq!(session().end(&line(140.0)), []);
+        // Up, leaning right, is closest to U, which repeats: those match only exactly.
+        assert_eq!(session().end(&line(65.0)), []);
     }
 
     #[test]
     fn unknown_stroke_fires_nothing() {
         let mut session = session();
-        assert_eq!(session.end(&s("DR"), &[]), []);
+        assert_eq!(session.end(&drawn("DR")), []);
         assert!(!session.matched());
     }
 
@@ -310,7 +355,7 @@ mod tests {
         // Once locked, the stroke no longer matters.
         assert_eq!(session.stroke(&s("UR")), []);
         assert_eq!(session.wheel(Wheel::Up), [keys("ctrl+Tab")]);
-        assert_eq!(session.end(&s("UR"), &[]), []);
+        assert_eq!(session.end(&drawn("UR")), []);
     }
 
     #[test]
@@ -319,7 +364,7 @@ mod tests {
         let alt: Combo = "alt".parse().unwrap();
         assert_eq!(session.stroke(&s("R")), [Fire::Hold(alt.clone()), keys("Tab")]);
         assert_eq!(session.motion(60.0, 0.0), [keys("Tab")]);
-        assert_eq!(session.end(&s("R"), &[]), [Fire::Release(alt.clone())]);
+        assert_eq!(session.end(&drawn("R")), [Fire::Release(alt.clone())]);
         assert_eq!(session.cancel(), [], "keys are released only once");
 
         let mut session = self::session();
@@ -342,19 +387,19 @@ mod tests {
         let gestures = Config::parse(gestures, &[], &[]).unwrap().gestures;
         let mut session = Session::new(gestures.clone());
         session.set_mods("shift".parse().unwrap());
-        assert_eq!(session.end(&s("L"), &[]), [keys("ctrl+shift+Tab")]);
+        assert_eq!(session.end(&drawn("L")), [keys("ctrl+shift+Tab")]);
         let mut session = Session::new(gestures.clone());
-        assert_eq!(session.end(&s("L"), &[]), [keys("alt+Left")]);
+        assert_eq!(session.end(&drawn("L")), [keys("alt+Left")]);
         let mut session = Session::new(gestures);
         session.set_mods("ctrl".parse().unwrap());
-        assert_eq!(session.end(&s("L"), &[]), [], "ctrl+L is no gesture");
+        assert_eq!(session.end(&drawn("L")), [], "ctrl+L is no gesture");
     }
 
     #[test]
     fn abandoned_fires_nothing_but_only_before_a_fire() {
         let mut session = session();
         assert!(session.abandon());
-        assert_eq!(session.end(&s("L"), &[]), []);
+        assert_eq!(session.end(&drawn("L")), []);
         assert_eq!(session.wheel(Wheel::Down), []);
         let mut session = self::session();
         session.stroke(&s("U"));
@@ -371,6 +416,6 @@ mod tests {
         assert_eq!(session.wheel(Wheel::Up), []);
         assert_eq!(session.click(crate::config::BTN_RIGHT), [command("rocked")]);
         assert_eq!(session.stroke(&s("U")), [], "no repeat after a wheel gesture");
-        assert_eq!(session.end(&s("L"), &[]), []);
+        assert_eq!(session.end(&drawn("L")), []);
     }
 }

@@ -64,9 +64,13 @@ impl Hint {
         }
     }
 
+    /// Shows the gesture's own stroke, which may not be quite what was drawn.
     pub fn fired(stroke: &Stroke, gesture: &Gesture) -> Hint {
         Hint {
-            stroke: stroke.clone(),
+            stroke: match &gesture.input {
+                Input::Stroke(bound) => bound.clone(),
+                _ => stroke.clone(),
+            },
             label: Some(gesture.label()),
             shape: match &gesture.input {
                 Input::Shape(shape) => Some(shape.clone()),
