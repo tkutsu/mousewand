@@ -15,6 +15,8 @@ type Page = "general" | "every" | "app" | "shapes" | "setup";
 
 type Status = { kind: "ok" | "error" | "warn"; text: string } | null;
 
+type Saved = Pick<api.State, "settings" | "global" | "app" | "settingsApp">;
+
 export default function App() {
   const [state, setState] = useState<api.State | null>(null);
   const [settings, setSettings] = useState<api.Settings | null>(null);
@@ -30,16 +32,23 @@ export default function App() {
   // A close asked for with unsaved changes; asking again discards them.
   const [closing, setClosing] = useState(false);
   const main = useRef<HTMLElement>(null);
+  // What's on disk, for Revert. Shapes aren't in it: they save as they're drawn.
+  const saved = useRef<Saved | null>(null);
+
+  const restore = (s: Saved) => {
+    setSettings(s.settings);
+    setGlobal(s.global);
+    setApp(s.app);
+    setSettingsApp(s.settingsApp);
+  };
 
   useEffect(() => {
     api.keyboardAccess().then(setKeyboard, () => setKeyboard(false));
     Promise.all([api.load(), api.notes()])
       .then(([s, n]) => {
         setState(s);
-        setSettings(s.settings);
-        setGlobal(s.global);
-        setApp(s.app);
-        setSettingsApp(s.settingsApp);
+        saved.current = s;
+        restore(s);
         setShapes(s.shapes);
         setNotes(n.notes);
         if (n.open && n.notes.length > 0) setPage("setup");
@@ -85,11 +94,20 @@ export default function App() {
     }
     try {
       await api.save(settings, global, app ? [app, settingsApp] : [settingsApp]);
+      saved.current = { settings, global, app, settingsApp };
       setDirty(false);
       setStatus({ kind: "ok", text: "Saved. mousewand uses it right away." });
     } catch (e) {
       setStatus({ kind: "error", text: `Couldn't save: ${sentence(e)}` });
     }
+  };
+
+  const onRevert = () => {
+    if (!saved.current || !dirty) return;
+    restore(saved.current);
+    setDirty(false);
+    setClosing(false);
+    setStatus({ kind: "ok", text: "Back to how it was last saved." });
   };
 
   const addGesture = () => {
@@ -234,6 +252,9 @@ export default function App() {
               </p>
             )}
           </div>
+          <button className="button" disabled={!dirty} onClick={onRevert} title="Undo every change since the last save">
+            Revert
+          </button>
           <button className="button primary" disabled={!dirty} onClick={onSave} title="Ctrl+S">
             Save
           </button>
