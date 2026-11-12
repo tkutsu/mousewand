@@ -116,12 +116,18 @@ pub struct App {
     pub gestures: Vec<Gesture>,
 }
 
+/// An app's own shortcuts, offered first in its Do menu.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Preset {
+pub struct AppShortcuts {
     pub name: String,
     pub classes: Vec<String>,
-    pub gestures: Vec<Gesture>,
+    pub shortcuts: Vec<Shortcut>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Shortcut {
+    pub name: String,
+    pub keys: String,
 }
 
 /// Everything the window shows.
@@ -138,7 +144,7 @@ pub struct State {
     pub themes: Vec<ThemeInfo>,
     /// The built-in shapes, then the drawn ones.
     pub shapes: Vec<ShapeInfo>,
-    pub presets: Vec<Preset>,
+    pub app_shortcuts: Vec<AppShortcuts>,
 }
 
 impl App {
@@ -237,7 +243,7 @@ impl Dir {
                     outline: s.outline().iter().map(|&(x, y)| [x, y]).collect(),
                 })
                 .collect(),
-            presets: presets()?,
+            app_shortcuts: app_shortcuts()?,
         })
     }
 
@@ -334,7 +340,9 @@ impl Dir {
             .map(|name| {
                 let theme = self.theme(&name).ok();
                 ThemeInfo {
-                    colors: theme.as_ref().map_or(Vec::new(), |t| t.color.0.iter().map(|c| c.0).collect()),
+                    colors: theme
+                        .as_ref()
+                        .map_or(Vec::new(), |t| t.color.0.iter().map(|c| c.0).collect()),
                     width: theme.as_ref().map_or(0.0, |t| t.width),
                     glow: theme.as_ref().map_or(0.0, |t| t.glow),
                     name,
@@ -620,27 +628,13 @@ fn step_table(step: &Step) -> InlineTable {
 }
 
 #[derive(Deserialize)]
-struct PresetFile {
-    preset: Vec<toml::Table>,
+struct ShortcutFile {
+    app: Vec<AppShortcuts>,
 }
 
-fn presets() -> Result<Vec<Preset>, String> {
-    let file: PresetFile = toml::from_str(include_str!("../presets.toml")).map_err(|e| e.to_string())?;
-    file.preset
-        .iter()
-        .map(|p| {
-            let classes = p
-                .get("classes")
-                .and_then(|c| c.as_array())
-                .map(|list| list.iter().filter_map(|c| c.as_str().map(String::from)).collect())
-                .unwrap_or_default();
-            Ok(Preset {
-                name: p.get("name").and_then(|n| n.as_str()).unwrap_or("?").into(),
-                classes,
-                gestures: gestures_of(p)?,
-            })
-        })
-        .collect()
+fn app_shortcuts() -> Result<Vec<AppShortcuts>, String> {
+    let file: ShortcutFile = toml::from_str(include_str!("../shortcuts.toml")).map_err(|e| e.to_string())?;
+    Ok(file.app)
 }
 
 #[cfg(test)]
@@ -689,7 +683,8 @@ mod tests {
         });
         let mut settings = state.settings.clone();
         settings.cancel_ms = 700;
-        dir.save(&settings, &[copy.clone()], std::slice::from_ref(&app)).unwrap();
+        dir.save(&settings, &[copy.clone()], std::slice::from_ref(&app))
+            .unwrap();
 
         let main = std::fs::read_to_string(path.join("config.toml")).unwrap();
         assert!(main.contains("with = \"shift\""), "{main}");
@@ -713,17 +708,16 @@ mod tests {
     }
 
     #[test]
-    fn presets_are_valid_gestures() {
-        let presets = presets().unwrap();
-        assert!(presets.len() >= 5);
-        for preset in presets {
-            let app = App {
-                gestures: preset.gestures.clone(),
-                ..App::new("x".into(), preset.classes.clone())
-            };
-
-            let text = edit_app("", &app).unwrap();
-            Config::parse("", &[("x".into(), text)], &[]).unwrap_or_else(|e| panic!("{}: {e}", preset.name));
+    fn app_shortcuts_are_valid_combos() {
+        let apps = app_shortcuts().unwrap();
+        assert!(apps.len() >= 5);
+        for app in apps {
+            let mut names = std::collections::HashSet::new();
+            for shortcut in &app.shortcuts {
+                assert!(names.insert(&shortcut.name), "{}: {} twice", app.name, shortcut.name);
+                let combo: Result<mousewand_core::keys::Combo, _> = shortcut.keys.parse();
+                combo.unwrap_or_else(|e| panic!("{}: {e}", app.name));
+            }
         }
     }
 

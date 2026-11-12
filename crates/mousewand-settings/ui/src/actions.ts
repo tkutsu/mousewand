@@ -1,8 +1,8 @@
 // Ready-made actions to pick instead of typing keys. Each one is just a step
 // with the shortcut most apps use, filled in where it can be seen and
-// changed. An app's preset knows its own shortcuts, so those come first.
+// changed. An app's own shortcuts (shortcuts.toml) come first.
 
-import type { Preset, Step } from "./api";
+import type { AppShortcuts, Step } from "./api";
 
 export type ReadyMade = { name: string; step: Step };
 
@@ -78,18 +78,15 @@ export const COMMON: Group[] = [
   },
 ];
 
-/** The actions of the presets made for this app, then the common ones. */
-export function groupsFor(classes: string[], presets: Preset[]): Group[] {
+/** This app's own shortcuts, then the common ones it doesn't replace by name. */
+export function groupsFor(classes: string[], apps: AppShortcuts[]): Group[] {
   const lower = new Set(classes.map((c) => c.toLowerCase()));
-  const own = presets
-    .filter((p) => p.classes.some((c) => lower.has(c.toLowerCase())))
-    .map((p) => ({
-      title: `For ${p.name}`,
-      actions: p.gestures
-        .filter((g) => g.name && g.steps.length === 1)
-        .map((g) => ({ name: g.name!, step: g.steps[0] })),
-    }));
-  return [...own, ...COMMON];
+  const own = apps
+    .filter((a) => a.classes.some((c) => lower.has(c.toLowerCase())))
+    .map((a) => ({ title: `For ${a.name}`, actions: a.shortcuts.map((s) => keys(s.name, s.keys)) }));
+  const taken = new Set(own.flatMap((g) => g.actions.map((a) => a.name)));
+  const common = COMMON.map((g) => ({ ...g, actions: g.actions.filter((a) => !taken.has(a.name)) }));
+  return [...own, ...common.filter((g) => g.actions.length > 0)];
 }
 
 /** How a ready-made action reads in a menu: its name, then what it does. */
