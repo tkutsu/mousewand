@@ -238,12 +238,6 @@ pub struct Drawing {
     pub path: Vec<Point>,
 }
 
-/// How far, in degrees, a drawing may stray from a stroke and still match
-/// it: see [`Drawing::deviation`]. A lone line may lean 30° off its
-/// direction, though it reads as a diagonal from 22.5°, and a corner
-/// rounded into a diagonal may take up 40% of the drawing.
-pub const MAX_DEVIATION: f64 = 30.0;
-
 impl Drawing {
     /// How far the drawing strays from `stroke`, in degrees: the
     /// length-weighted root mean square angle between each run and the
@@ -286,6 +280,9 @@ fn merge_equal_neighbours(runs: &mut Vec<Vec2>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The default `stroke_tolerance`.
+    const TOLERANCE: f64 = 30.0;
 
     fn drawing(moves: &[(f64, f64, usize)]) -> Drawing {
         let mut r = Recognizer::new(30.0);
@@ -382,8 +379,8 @@ mod tests {
         let rounded = [(0.0, -3.0, 30), (2.0, -2.0, 15), (3.0, 0.0, 30)];
         assert_eq!(draw(&rounded), "U9R");
         let d = deviations(&rounded, &["UR", "9", "U", "R"]);
-        assert!(d[0] < MAX_DEVIATION, "{d:?}");
-        assert!(d[1..].iter().all(|&far| far > MAX_DEVIATION), "{d:?}");
+        assert!(d[0] < TOLERANCE, "{d:?}");
+        assert!(d[1..].iter().all(|&far| far > TOLERANCE), "{d:?}");
     }
 
     #[test]
@@ -393,7 +390,7 @@ mod tests {
         let leaning = [(3.0 * sin, -3.0 * cos, 40), (3.0, 0.0, 40)];
         assert_eq!(draw(&leaning), "9R");
         let d = deviations(&leaning, &["UR", "R"]);
-        assert!(d[0] < MAX_DEVIATION && d[1] > MAX_DEVIATION, "{d:?}");
+        assert!(d[0] < TOLERANCE && d[1] > TOLERANCE, "{d:?}");
     }
 
     #[test]
@@ -402,7 +399,7 @@ mod tests {
         assert_eq!(deviations(&up, &["UR"]), [f64::INFINITY]);
         let up_left = [(0.0, -3.0, 40), (-3.0, 0.0, 40)];
         let d = deviations(&up_left, &["U", "UR", "U7"]);
-        assert!(d.iter().all(|&far| far > MAX_DEVIATION), "{d:?}");
+        assert!(d.iter().all(|&far| far > TOLERANCE), "{d:?}");
         assert_eq!(Drawing::default().deviation(&"U".parse().unwrap()), f64::INFINITY);
     }
 

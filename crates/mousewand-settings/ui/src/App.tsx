@@ -312,7 +312,7 @@ function GeneralPage({
   onChange: (settings: api.Settings) => void;
 }) {
   const set = (patch: Partial<api.Settings>) => onChange({ ...settings, ...patch });
-  const number = (key: "threshold" | "holdMs" | "minSegment" | "cancelMs", unit: string) => (
+  const number = (key: "threshold" | "holdMs" | "minSegment" | "strokeTolerance" | "cancelMs", unit: string) => (
     <>
       <input
         className="field w-20 text-right"
@@ -342,6 +342,17 @@ function GeneralPage({
         </Row>
         <Row label="Ignore strokes under" hint="Shorter wiggles don't count as a direction">
           {number("minSegment", "px")}
+        </Row>
+        <Row
+          label="Forgive sloppy strokes"
+          hint="When nothing matches exactly, fire the closest stroke within this many degrees: U9R still fires UR"
+        >
+          {settings.strokeTolerance > 0 && number("strokeTolerance", "°")}
+          <Switch
+            on={settings.strokeTolerance > 0}
+            label="Forgive sloppy strokes"
+            onChange={(on) => set({ strokeTolerance: on ? 30 : 0 })}
+          />
         </Row>
         <Row
           label="Cancel by holding still"

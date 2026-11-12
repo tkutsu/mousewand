@@ -54,6 +54,8 @@ pub struct Settings {
     /// Holding still this long mid-stroke cancels it; 0 never does.
     pub cancel_ms: u64,
     pub min_segment: f64,
+    /// How far, in degrees, a drawing may stray from a stroke and still fire it; 0 fires exact strokes only.
+    pub stroke_tolerance: f64,
     pub theme: String,
     /// The stroke or shape that opens this app.
     pub open_settings: Drawn,
@@ -231,6 +233,7 @@ impl Dir {
             hold_ms: s.hold_ms,
             cancel_ms: s.cancel_ms,
             min_segment: s.min_segment,
+            stroke_tolerance: s.stroke_tolerance,
             theme: s.theme.clone(),
             open_settings: Drawn {
                 input: open_settings.0.into(),
@@ -545,6 +548,10 @@ fn edit_main(text: &str, settings: &Settings, global: &[Gesture]) -> Result<Stri
         doc["cancel_ms"] = value(cancel_ms);
     }
     doc["min_segment"] = value(settings.min_segment);
+    let tolerance = settings.stroke_tolerance;
+    if tolerance != mousewand_core::Settings::default().stroke_tolerance || doc.contains_key("stroke_tolerance") {
+        doc["stroke_tolerance"] = value(tolerance);
+    }
     doc["theme"] = value(&settings.theme);
     // The default stays unwritten, so the file only says what differs.
     let open = &settings.open_settings;
@@ -711,6 +718,7 @@ mod tests {
         });
         let mut settings = state.settings.clone();
         settings.cancel_ms = 700;
+        settings.stroke_tolerance = 0.0;
         dir.save(&settings, &[copy.clone()], std::slice::from_ref(&app))
             .unwrap();
 
@@ -721,12 +729,14 @@ mod tests {
             "{main}"
         );
         assert!(main.contains("cancel_ms = 700"), "{main}");
+        assert!(main.contains("stroke_tolerance = 0"), "{main}");
         let blender = std::fs::read_to_string(path.join("apps/blender.toml")).unwrap();
         assert!(blender.contains("enabled = false"), "{blender}");
 
         let again = dir.load(Some("blender")).unwrap();
         assert_eq!(again.global, [copy]);
         assert_eq!(again.settings.cancel_ms, 700);
+        assert_eq!(again.settings.stroke_tolerance, 0.0);
         let mut app = again.app.unwrap();
         assert!(!app.enabled);
         app.enabled = true;

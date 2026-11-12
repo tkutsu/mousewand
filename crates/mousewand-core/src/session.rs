@@ -11,7 +11,7 @@
 use crate::config::{Action, Gesture, Input, Kind, Wheel};
 use crate::keys::{Combo, Mods};
 use crate::shape;
-use crate::stroke::{Drawing, MAX_DEVIATION, Stroke};
+use crate::stroke::{Drawing, Stroke};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Fire {
@@ -33,6 +33,8 @@ pub struct Session {
     mods: Mods,
     /// Given up on: nothing fires any more.
     abandoned: bool,
+    /// How far a drawing may stray from a oneshot stroke, in degrees.
+    tolerance: f64,
 }
 
 #[derive(Debug)]
@@ -46,13 +48,15 @@ struct Locked {
 }
 
 impl Session {
-    pub fn new(gestures: Vec<Gesture>) -> Self {
+    /// `tolerance` is the `stroke_tolerance` setting.
+    pub fn new(gestures: Vec<Gesture>, tolerance: f64) -> Self {
         Session {
             gestures,
             locked: None,
             fired: false,
             mods: Mods::NONE,
             abandoned: false,
+            tolerance,
         }
     }
 
@@ -183,9 +187,9 @@ impl Session {
         }
     }
 
-    /// The oneshot stroke the drawing strays least from, within
-    /// [`MAX_DEVIATION`]. Repeat and hold strokes take only exact matches:
-    /// they lock mid-gesture, where the drawing isn't finished yet.
+    /// The oneshot stroke the drawing strays least from, within the
+    /// tolerance. Repeat and hold strokes take only exact matches: they
+    /// lock mid-gesture, where the drawing isn't finished yet.
     fn closest(&self, drawing: &Drawing) -> Option<Input> {
         self.candidates()
             .filter(|g| !g.kind.continuous())
@@ -193,7 +197,7 @@ impl Session {
                 Input::Stroke(stroke) => Some((drawing.deviation(stroke), &g.input)),
                 _ => None,
             })
-            .filter(|&(deviation, _)| deviation <= MAX_DEVIATION)
+            .filter(|&(deviation, _)| deviation <= self.tolerance)
             .min_by(|a, b| a.0.total_cmp(&b.0))
             .map(|(_, input)| input.clone())
     }
@@ -255,8 +259,11 @@ mod tests {
         action = { command = "rocked" }
     "#;
 
+    /// The default `stroke_tolerance`.
+    const TOLERANCE: f64 = 30.0;
+
     fn session() -> Session {
-        Session::new(Config::parse(GESTURES, &[], &[]).unwrap().gestures)
+        Session::new(Config::parse(GESTURES, &[], &[]).unwrap().gestures, TOLERANCE)
     }
 
     fn s(stroke: &str) -> Stroke {
@@ -313,10 +320,10 @@ mod tests {
         let circle = drawing(&moves);
         let settings = Fire::Run(Action::Command("mousewand-settings".into()));
         let gestures = Config::parse(GESTURES, &[], &[]).unwrap().gestures_for("x");
-        let mut session = Session::new(gestures.clone());
+        let mut session = Session::new(gestures.clone(), TOLERANCE);
         assert_eq!(session.end(&circle), [settings]);
         // "L" is bound, so it wins whatever the path looks like.
-        let mut session = Session::new(gestures);
+        let mut session = Session::new(gestures, TOLERANCE);
         let mut left = drawn("L");
         left.path = circle.path;
         assert_eq!(session.end(&left), [keys("alt+Left")]);
@@ -332,6 +339,9 @@ mod tests {
         assert_eq!(session().end(&line(140.0)), []);
         // Up, leaning right, is closest to U, which repeats: those match only exactly.
         assert_eq!(session().end(&line(65.0)), []);
+        // With no tolerance, only exact strokes fire.
+        let gestures = Config::parse(GESTURES, &[], &[]).unwrap().gestures;
+        assert_eq!(Session::new(gestures, 0.0).end(&leaning), []);
     }
 
     #[test]
@@ -385,12 +395,12 @@ mod tests {
             action = { keys = "ctrl+shift+Tab" }
         "#;
         let gestures = Config::parse(gestures, &[], &[]).unwrap().gestures;
-        let mut session = Session::new(gestures.clone());
+        let mut session = Session::new(gestures.clone(), TOLERANCE);
         session.set_mods("shift".parse().unwrap());
         assert_eq!(session.end(&drawn("L")), [keys("ctrl+shift+Tab")]);
-        let mut session = Session::new(gestures.clone());
+        let mut session = Session::new(gestures.clone(), TOLERANCE);
         assert_eq!(session.end(&drawn("L")), [keys("alt+Left")]);
-        let mut session = Session::new(gestures);
+        let mut session = Session::new(gestures, TOLERANCE);
         session.set_mods("ctrl".parse().unwrap());
         assert_eq!(session.end(&drawn("L")), [], "ctrl+L is no gesture");
     }
