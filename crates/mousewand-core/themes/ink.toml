@@ -1,0 +1,6 @@
+# A plain dark pen line, for light wallpapers.
+color = "#1d1f24"
+width = 10
+life_ms = 400
+fade_ms = 250
+glow = 0

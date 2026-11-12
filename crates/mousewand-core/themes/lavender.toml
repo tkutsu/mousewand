@@ -1,0 +1,6 @@
+# Soft lilac, deepening to violet.
+color = ["#f3e8ff", "#c4a7ff", "#8b6cff"]
+width = 26
+life_ms = 500
+fade_ms = 300
+glow = 0.7

@@ -1,0 +1,7 @@
+# Hot pink through violet to cyan, glowing hard.
+color = ["#ff2fd6", "#7a3cff", "#00e5ff"]
+rejected = "#7f8ca3"
+width = 26
+life_ms = 550
+fade_ms = 350
+glow = 1.0

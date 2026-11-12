@@ -1,0 +1,7 @@
+# Catppuccin Mocha: pink, mauve and blue.
+color = ["#f5c2e7", "#cba6f7", "#89b4fa"]
+rejected = "#f38ba8"
+width = 26
+life_ms = 550
+fade_ms = 350
+glow = 0.7
