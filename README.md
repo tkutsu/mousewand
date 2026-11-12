@@ -1,4 +1,4 @@
-# mousewand
+# <img src="docs/logo.svg" alt="" width="40" align="center"> mousewand
 
 Mouse gestures for Linux. Hold a mouse button, draw a stroke, and the window under the cursor gets the action you set for that stroke in that app.
 
