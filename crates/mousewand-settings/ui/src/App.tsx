@@ -334,7 +334,12 @@ function GeneralPage({
       </Section>
       <Section title="Trail">
         <Row label="Theme" hint="Add your own in themes/">
-          <select className="field w-40" value={settings.theme} onChange={(e) => set({ theme: e.target.value })}>
+          <select
+            className="field w-40"
+            title="How the trail looks as you draw"
+            value={settings.theme}
+            onChange={(e) => set({ theme: e.target.value })}
+          >
             {themes.map((t) => (
               <option key={t}>{t}</option>
             ))}
@@ -388,6 +393,7 @@ function AppPage({
         <Row label="Window classes" hint="Separate several with commas">
           <input
             className="field w-72 font-mono"
+            title="Windows of these classes get this page's gestures"
             value={app.classes.join(", ")}
             onChange={(e) =>
               onChange({
@@ -419,7 +425,8 @@ function AppPage({
                 ))}
               </optgroup>
             </select>
-            <button className="button" disabled={!preset} onClick={addPreset}>
+            <button className="button" disabled={!preset} onClick={addPreset} title="Add this preset's gestures">
+
               Add
             </button>
           </Row>

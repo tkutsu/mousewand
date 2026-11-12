@@ -53,6 +53,7 @@ export function ShapeSelect({
   return (
     <select
       className="field"
+      title="Pick a shape, or draw a new one"
       value={drawing ? "" : value}
       onChange={(e) => (e.target.value ? onChange(e.target.value) : onDraw())}
     >
