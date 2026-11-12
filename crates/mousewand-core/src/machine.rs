@@ -9,8 +9,7 @@
 use std::time::Duration;
 
 use crate::config::{Settings, Wheel};
-use crate::shape::Point;
-use crate::stroke::{Recognizer, Stroke};
+use crate::stroke::{Drawing, Recognizer, Stroke};
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Output {
@@ -26,9 +25,8 @@ pub enum Output {
     Begin,
     /// The recognized stroke changed mid-gesture.
     Update(Stroke),
-    /// The trigger was released and the gesture is over: its stroke, and
-    /// its path for shapes.
-    End(Stroke, Vec<Point>),
+    /// The trigger was released and the gesture is over: what was drawn.
+    End(Drawing),
     /// The gesture was abandoned (e.g. its mouse was unplugged): fire nothing.
     Cancel,
     /// Pointer motion during a gesture, for repeat steps.
@@ -151,7 +149,7 @@ impl Machine {
             } if rec.stroke().is_empty() => {
                 vec![Output::Cancel, Output::Press, Output::Release]
             }
-            State::Gesturing { rec, .. } => vec![Output::End(rec.stroke(), rec.path().to_vec())],
+            State::Gesturing { rec, .. } => vec![Output::End(rec.finish())],
         }
     }
 
@@ -277,9 +275,9 @@ mod tests {
     /// The stroke, if the outputs are just the end of a gesture.
     fn ended(out: Vec<Output>) -> Option<Stroke> {
         match out.as_slice() {
-            [End(stroke, path)] => {
-                assert!(!path.is_empty());
-                Some(stroke.clone())
+            [End(drawing)] => {
+                assert!(!drawing.path.is_empty());
+                Some(drawing.stroke.clone())
             }
             _ => None,
         }

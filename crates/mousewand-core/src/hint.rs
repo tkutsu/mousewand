@@ -76,10 +76,14 @@ impl Hint {
         }
     }
 
-    /// `gesture` fired, `count` times in a row.
+    /// `gesture` fired, `count` times in a row. Shows the gesture's own
+    /// stroke, which may not be quite what was drawn.
     pub fn fired(stroke: &Stroke, gesture: &Gesture, count: u32) -> Hint {
         Hint {
-            stroke: stroke.clone(),
+            stroke: match &gesture.input {
+                Input::Stroke(bound) => bound.clone(),
+                _ => stroke.clone(),
+            },
             label: Some(gesture.label()),
             input: match &gesture.input {
                 Input::Stroke(_) => None,
