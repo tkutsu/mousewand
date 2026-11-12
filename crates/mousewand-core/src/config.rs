@@ -1,8 +1,9 @@
 //! Config types and per-app gesture lookup.
 //!
 //! `config.toml` holds settings, the gestures every app gets unless it
-//! overrides them, the `[global]` gestures no app overrides, and the `[hint]`
-//! style. Each `apps/<name>.toml` holds the gestures for one app, matched by
+//! overrides them, the `[global]` gestures no app overrides, the `[hint]`
+//! style, and the `[off]` windows where the triggers stay ordinary buttons.
+//! Each `apps/<name>.toml` holds the gestures for one app, matched by
 //! window class, and each `shapes/<name>.toml` a shape taught by drawing it.
 //! Parsing is pure: the caller reads the files and passes their text in.
 
@@ -25,6 +26,7 @@ pub struct Config {
     /// they belong to that button alone.
     pub global: Vec<Gesture>,
     pub hint: HintStyle,
+    pub off: Off,
     /// Set by the caller from `themes/<settings.theme>.toml`.
     pub theme: Theme,
     /// The built-in shapes and the taught ones.
@@ -555,7 +557,59 @@ struct MainFile {
     global: GlobalFile,
     #[serde(default)]
     hint: HintStyle,
+    #[serde(default)]
+    off: Off,
     open_settings: Option<RawOpen>,
+}
+
+/// `[off]`: windows where gestures are off, by class. Each pattern is
+/// compared case-insensitively, `*` standing for any run of characters
+/// and `?` for one.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Off {
+    /// Steam, Proton and Wine games: [`GAME_CLASSES`].
+    pub games: bool,
+    #[serde(rename = "match")]
+    pub classes: Vec<String>,
+}
+
+impl Default for Off {
+    fn default() -> Self {
+        Off {
+            games: true,
+            classes: Vec::new(),
+        }
+    }
+}
+
+/// The window classes of Steam games run through Proton, of anything run
+/// through Wine, and of gamescope. Native Linux games have their own.
+pub const GAME_CLASSES: [&str; 4] = ["steam_app_*", "*.exe", "gamescope", "steam_proton"];
+
+impl Off {
+    /// The pattern that turns gestures off over `class`, if one does.
+    pub fn by(&self, class: &str) -> Option<&str> {
+        let games = GAME_CLASSES.iter().copied().filter(|_| self.games);
+        games
+            .chain(self.classes.iter().map(String::as_str))
+            .find(|pattern| matches(pattern, class))
+    }
+}
+
+/// Whether `class` fits `pattern`, ignoring case: `*` is any run of
+/// characters, `?` one.
+pub fn matches(pattern: &str, class: &str) -> bool {
+    fn fits(p: &[char], t: &[char]) -> bool {
+        match p.split_first() {
+            None => t.is_empty(),
+            Some(('*', rest)) => (0..=t.len()).any(|i| fits(rest, &t[i..])),
+            Some(('?', rest)) => !t.is_empty() && fits(rest, &t[1..]),
+            Some((c, rest)) => t.first() == Some(c) && fits(rest, &t[1..]),
+        }
+    }
+    let chars = |s: &str| s.to_lowercase().chars().collect::<Vec<_>>();
+    fits(&chars(pattern), &chars(class))
 }
 
 /// `open_settings = { shape = "circle" }`, or a `stroke`.
@@ -801,6 +855,7 @@ impl Config {
             apps,
             global,
             hint: main.hint,
+            off: main.off,
             theme: Theme::default(),
             shapes,
             open_settings,
@@ -837,10 +892,11 @@ impl Config {
         self.global.clone()
     }
 
-    /// Whether gestures work over a window of `class`. An app file can turn
-    /// them off, and then both triggers are ordinary buttons there.
+    /// Whether gestures work over a window of `class`. `[off]` or an app
+    /// file can turn them off, and then both triggers are ordinary buttons
+    /// there.
     pub fn enabled_for(&self, class: &str) -> bool {
-        self.app(class).is_none_or(|app| app.enabled)
+        self.off.by(class).is_none() && self.app(class).is_none_or(|app| app.enabled)
     }
 
     /// Whether any gesture needs to know which modifier keys are held.
@@ -1540,6 +1596,22 @@ mod tests {
         assert!(!c.enabled_for("Blender"));
         assert!(c.enabled_for("firefox"));
         assert_eq!(c.settings.cancel_ms, 0);
+    }
+
+    #[test]
+    fn off_turns_gestures_off_by_pattern() {
+        let c = Config::parse(MAIN, &[], &[]).unwrap();
+        assert!(!c.enabled_for("steam_app_1091500"), "games are off by default");
+        assert!(!c.enabled_for("Setup.EXE"));
+        assert!(c.enabled_for("steam"), "the Steam client isn't a game");
+
+        let main = format!("{MAIN}\n[off]\ngames = false\nmatch = [\"org.gnome.*\", \"blend?r\"]");
+        let c = Config::parse(&main, &[], &[]).unwrap();
+        assert!(c.enabled_for("steam_app_1091500"));
+        assert!(!c.enabled_for("org.gnome.Nautilus"));
+        assert!(!c.enabled_for("Blender"));
+        assert!(c.enabled_for("blendr") && c.enabled_for("org.kde.dolphin"));
+        assert_eq!(c.off.by("BLENDER"), Some("blend?r"));
     }
 
     #[test]

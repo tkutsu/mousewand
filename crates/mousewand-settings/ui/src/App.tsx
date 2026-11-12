@@ -11,7 +11,7 @@ import Shapes from "./Shapes";
 import TrailPreview from "./TrailPreview";
 import { Logo, Problem, Row, Section, Switch } from "./ui";
 
-type Page = "general" | "every" | "app" | "shapes" | "setup";
+type Page = "general" | "appearance" | "every" | "app" | "window" | "shapes" | "setup";
 
 type Status = { kind: "ok" | "error" | "warn"; text: string } | null;
 
@@ -59,8 +59,10 @@ export default function App() {
 
   const pages: Page[] = [
     "general",
+    "appearance",
     "every",
     ...(app ? (["app"] as const) : []),
+    "window",
     "shapes",
     ...(notes.length > 0 ? (["setup"] as const) : []),
   ];
@@ -70,8 +72,8 @@ export default function App() {
     if (problems(global).some(Boolean)) return "every";
     if (app?.enabled && problems(app.gestures).some(Boolean)) return "app";
     const open = settings?.openSettings;
-    if (open?.input === "stroke" && !open.value) return "general";
-    if (settingsApp && problems(settingsApp.gestures).some(Boolean)) return "general";
+    if (open?.input === "stroke" && !open.value) return "window";
+    if (settingsApp && problems(settingsApp.gestures).some(Boolean)) return "window";
     return null;
   };
 
@@ -146,10 +148,10 @@ export default function App() {
   /** Where the unsaved gestures use a shape, if they do. */
   const usedWhere = (name: string): string | null => {
     const uses = (gestures: api.Gesture[]) => gestures.some((g) => g.input === "shape" && g.value === name);
-    if (settings?.openSettings.input === "shape" && settings.openSettings.value === name) return "General";
-    if (uses(global)) return "Every App";
+    if (settings?.openSettings.input === "shape" && settings.openSettings.value === name) return "Settings Window";
+    if (uses(global)) return "All Apps";
     if (app && uses(app.gestures)) return api.appName(app);
-    if (settingsApp && uses(settingsApp.gestures)) return "General";
+    if (settingsApp && uses(settingsApp.gestures)) return "Settings Window";
     return null;
   };
 
@@ -162,9 +164,11 @@ export default function App() {
   }
 
   const titles: Record<Page, string> = {
-    app: app ? api.appName(app) : "",
-    every: "Every App",
+    app: app ? `Current App (${api.appName(app)})` : "",
+    every: "All Apps",
     general: "General",
+    appearance: "Appearance",
+    window: "Settings Window",
     shapes: "Shapes",
     setup: "Setup",
   };
@@ -193,17 +197,20 @@ export default function App() {
           <div className="mx-auto flex max-w-4xl flex-col gap-6 px-8 pt-6 pb-10">
             <h1 className="text-[20px] font-semibold tracking-tight">{titles[page]}</h1>
             {page === "general" && (
-              <>
-                <GeneralPage settings={settings} themes={state.themes} onChange={edit(setSettings)} />
-                <SettingsGestures
-                  settings={settings}
-                  app={settingsApp}
-                  onSettings={edit(setSettings)}
-                  onApp={edit(setSettingsApp)}
-                  shapes={shapes.map((s) => s.name)}
-                  onNewShape={reloadShapes}
-                />
-              </>
+              <GeneralPage settings={settings} games={state.gameClasses} onChange={edit(setSettings)} />
+            )}
+            {page === "appearance" && (
+              <AppearancePage settings={settings} themes={state.themes} onChange={edit(setSettings)} />
+            )}
+            {page === "window" && (
+              <SettingsGestures
+                settings={settings}
+                app={settingsApp}
+                onSettings={edit(setSettings)}
+                onApp={edit(setSettingsApp)}
+                shapes={shapes.map((s) => s.name)}
+                onNewShape={reloadShapes}
+              />
             )}
             {page === "every" && (
               <GestureList
@@ -217,7 +224,13 @@ export default function App() {
             )}
             {page === "shapes" && <Shapes shapes={shapes} usedWhere={usedWhere} onChanged={reloadShapes} />}
             {page === "app" && app && (
-              <AppPage app={app} presets={state.presets} onChange={edit(setApp)} shapeProps={shapeProps} />
+              <AppPage
+                app={app}
+                presets={state.presets}
+                offBy={api.offBy(settings.off, state.gameClasses, app.classes)}
+                onChange={edit(setApp)}
+                shapeProps={shapeProps}
+              />
             )}
             {page === "setup" && <SetupPage notes={notes} />}
           </div>
@@ -269,11 +282,12 @@ function NavItem({
 
 function GeneralPage({
   settings,
-  themes,
+  games,
   onChange,
 }: {
   settings: api.Settings;
-  themes: api.ThemeInfo[];
+  /** The window class patterns of games. */
+  games: string[];
   onChange: (settings: api.Settings) => void;
 }) {
   const set = (patch: Partial<api.Settings>) => onChange({ ...settings, ...patch });
@@ -321,18 +335,64 @@ function GeneralPage({
         </Row>
       </Section>
       <Section
-        title="Pausing"
-        note={
-          <>
-            For games and anything else that wants the button for itself. An app can also turn its gestures off
-            for good, on its own page.
-          </>
-        }
+        title="Turning Off"
+        note="For games and anything else that wants the button for itself: there it's an ordinary button, as if mousewand weren't there."
       >
-        <Row label="Pause or resume" hint="Bind it to a keyboard shortcut in your desktop's settings">
+        <Row label="Games" hint="Steam, Proton and Wine windows">
+          <Switch
+            on={settings.off.games}
+            label={`Off in games: ${games.join(", ")}`}
+            onChange={(on) => set({ off: { ...settings.off, games: on } })}
+          />
+        </Row>
+        <Row label="These apps" hint="Window classes, one per line. * matches anything, ? one character">
+          <ClassList classes={settings.off.classes} onChange={(classes) => set({ off: { ...settings.off, classes } })} />
+        </Row>
+        <Row label="Pause or resume anywhere" hint="Bind it to a keyboard shortcut in your desktop's settings">
           <code className="rounded-md bg-ink/[0.06] px-2 py-1 font-mono text-[12px] select-text">mousewand toggle</code>
         </Row>
       </Section>
+    </>
+  );
+}
+
+/** Window class patterns, one per line. Blank lines are left out. */
+function ClassList({ classes, onChange }: { classes: string[]; onChange: (classes: string[]) => void }) {
+  // The text as typed, so a new line stays while it's still empty.
+  const [text, setText] = useState(classes.join("\n"));
+  return (
+    <textarea
+      className="field h-auto w-72 resize-y py-1.5 font-mono leading-snug"
+      rows={4}
+      spellCheck={false}
+      placeholder={"blender\norg.gnome.*"}
+      title="Gestures are off over windows of these classes"
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(
+          e.target.value
+            .split("\n")
+            .map((c) => c.trim())
+            .filter(Boolean),
+        );
+      }}
+    />
+  );
+}
+
+function AppearancePage({
+  settings,
+  themes,
+  onChange,
+}: {
+  settings: api.Settings;
+  themes: api.ThemeInfo[];
+  onChange: (settings: api.Settings) => void;
+}) {
+  const set = (patch: Partial<api.Settings>) => onChange({ ...settings, ...patch });
+  return (
+    <>
       <Section title="Trail">
         <Row label="Theme" hint="Add your own in themes/">
           <select
@@ -358,11 +418,14 @@ function GeneralPage({
 function AppPage({
   app,
   presets,
+  offBy,
   onChange,
   shapeProps,
 }: {
   app: api.App;
   presets: api.Preset[];
+  /** The pattern under General's Turning Off that matches this app, if one does. */
+  offBy: string | null;
   onChange: (app: api.App) => void;
   shapeProps: { shapes: api.ShapeInfo[]; onNewShape: (name: string) => void; keyboard: boolean };
 
@@ -386,12 +449,14 @@ function AppPage({
     <>
       <Section
         note={
-          app.enabled
-            ? `Saved in apps/${app.file}.toml`
-            : `The trigger button is an ordinary button over ${name}: a press, a drag or a click, as if mousewand weren't there.`
+          offBy
+            ? `Gestures are off over ${name} anyway: it matches ${offBy} under Turning Off, on the General page.`
+            : app.enabled
+              ? `Saved in apps/${app.file}.toml`
+              : `The trigger button is an ordinary button over ${name}: a press, a drag or a click, as if mousewand weren't there.`
         }
       >
-        <Row label={`Gestures in ${name}`} hint={app.enabled ? "On" : "Off"}>
+        <Row label={`Gestures in ${name}`} hint={offBy ? "Off under Turning Off" : app.enabled ? "On" : "Off"}>
           <Switch on={app.enabled} label={`Gestures in ${name}`} onChange={(enabled) => onChange({ ...app, enabled })} />
         </Row>
         <Row label="Window classes" hint="Separate several with commas">
