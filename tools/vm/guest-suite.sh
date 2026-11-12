@@ -17,13 +17,15 @@ case "$display" in
   :*) export DISPLAY=$display; unset WAYLAND_DISPLAY ;;
   *) export WAYLAND_DISPLAY=$display ;;
 esac
-dispatch=
+dispatch= click=
 case "$C" in
   hyprland) export MOUSEWAND_BACKEND=hyprland; dispatch='hl.dsp.window.fullscreen_state({ internal = 1, client = 0, action = "set" })' ;;
   sway) dispatch="fullscreen toggle" ;;
   kwin) dispatch="Window Maximize" ;;
   niri) export MOUSEWAND_BACKEND=niri; dispatch=maximize-column ;;
-  labwc | cosmic) export MOUSEWAND_BACKEND=toplevel ;;
+  labwc) export MOUSEWAND_BACKEND=toplevel ;;
+  # Nested in sway, COSMIC ignores focus_follows_cursor; a click focuses instead.
+  cosmic) export MOUSEWAND_BACKEND=toplevel; click="press left; wait 30; release left; wait 200;" ;;
 esac
 
 cat > ~/bin/note <<'EOF'
@@ -70,13 +72,13 @@ loaded() {
 
 # --- Drawing
 
-# The cursor to the left window's middle, at (400, 440): far up and left
-# first, which every compositor clamps to the corner. Through the right window
-# on the way, so the left one is entered and gets focus where focus follows
-# the mouse.
-PARK="move 40 0 40; wait 100; move -40 0 60; move 0 -40 40; move 0 4 110; move 8 0 50; wait 200;"
-RIGHT="move 40 0 20; wait 200;"
-LEFT="move -40 0 20; wait 200;"
+# The cursor to the left window's middle, at (400, 440): against the left
+# edge, which pins x, then the top edge, which pins y. Never into a corner,
+# where niri and others open an overview. Through the right window first, so
+# the left one is entered and gets focus where focus follows the mouse.
+PARK="move 40 0 40; wait 100; move -40 0 60; move 8 0 50; move 0 -40 40; move 0 4 110; wait 200; $click"
+RIGHT="move 40 0 20; wait 200; $click"
+LEFT="move -40 0 20; wait 200; $click"
 # One 150 px stroke with the trigger, then back to where it began without it.
 stroke() { echo "down; move $1 $2 50; up; wait 400; move $((-$1)) $((-$2)) 50; wait 150;"; }
 L=$(stroke -3 0) R=$(stroke 3 0) U=$(stroke 0 -3) D=$(stroke 0 3)
@@ -464,7 +466,8 @@ case "$C" in
         busctl --user set-property org.kde.KWin "$dev" org.kde.KWin.InputDevice pointerAccelerationProfileFlat b true
     done
     ;;
-  x11) xinput set-prop "mousewand virtual mouse" "libinput Accel Profile Enabled" 0 1 0 2> /dev/null ;;
+  # Its keys make it a keyboard to X too; only the pointer half takes this.
+  x11) xinput set-prop "pointer:mousewand virtual mouse" "libinput Accel Profile Enabled" 0 1 0 ;;
 esac
 
 echo "TAP version 13"
