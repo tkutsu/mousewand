@@ -212,7 +212,8 @@ pub struct Settings {
     pub hold_ms: u64,
     /// Holding still this long mid-stroke cancels the gesture. 0 never does.
     pub cancel_ms: u64,
-    /// Shorter direction runs are treated as noise.
+    /// Shorter direction runs are treated as noise, and so are runs under a
+    /// tenth of the drawing.
     pub min_segment: f64,
     /// How far, in degrees, a drawing may stray from a oneshot stroke and
     /// still fire it when nothing matches exactly: see

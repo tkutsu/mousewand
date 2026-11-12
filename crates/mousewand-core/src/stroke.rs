@@ -128,13 +128,19 @@ impl FromStr for Stroke {
 /// so single-count mouse jitter can't flip it.
 const SAMPLE: f64 = 8.0;
 
+/// A run shorter than this share of the drawing is noise, however long it
+/// is: the same drawing reads the same at any size, and with any mouse's
+/// resolution. A tenth keeps the eight runs of a circle.
+const NOISE_SHARE: f64 = 0.1;
+
 /// Turns relative motion into a stroke, and keeps the path for shapes.
 ///
 /// Motion is cut into short samples, and consecutive samples with the same
 /// direction add up into runs, each kept as a vector. A run shorter than
-/// `min_segment` is noise: the shortest one merges into whichever neighbour
-/// points the most like it, and the merged vector gets its direction anew.
-/// A wavy line's wobbles cancel out that way instead of splitting it up.
+/// `min_segment`, or than [`NOISE_SHARE`] of all the runs, is noise: the
+/// shortest one merges into whichever neighbour points the most like it,
+/// and the merged vector gets its direction anew. A wavy line's wobbles
+/// cancel out that way instead of splitting it up.
 #[derive(Clone, Debug)]
 pub struct Recognizer {
     min_segment: f64,
@@ -204,9 +210,11 @@ impl Recognizer {
     /// The runs left once noise has merged away, one per direction of the stroke.
     fn runs(&self) -> Vec<Vec2> {
         let mut runs = self.runs.clone();
+        let total: f64 = runs.iter().map(|&run| len(run)).sum();
+        let noise = self.min_segment.max(NOISE_SHARE * total);
         while runs.len() > 1 {
             let Some(i) = (0..runs.len())
-                .filter(|&i| len(runs[i]) < self.min_segment)
+                .filter(|&i| len(runs[i]) < noise)
                 .min_by(|&a, &b| len(runs[a]).total_cmp(&len(runs[b])))
             else {
                 break;
@@ -221,7 +229,7 @@ impl Recognizer {
             runs[into] = add(runs[into], short);
             merge_equal_neighbours(&mut runs);
         }
-        runs.retain(|&run| len(run) >= self.min_segment);
+        runs.retain(|&run| len(run) >= noise);
         merge_equal_neighbours(&mut runs);
         runs
     }
@@ -352,6 +360,24 @@ mod tests {
     #[test]
     fn short_hook_at_the_end_is_ignored() {
         assert_eq!(draw(&[(-3.0, 0.0, 60), (0.0, 3.0, 5)]), "L");
+    }
+
+    #[test]
+    fn reads_the_same_at_any_size() {
+        // An L with a slightly rounded corner, as drawn small, and big
+        // (or with a high-resolution mouse), where the corner alone is
+        // longer than `min_segment`.
+        for size in [1, 4, 10] {
+            let corner = [(0.0, -3.0, 40 * size), (2.0, -2.0, 5 * size), (3.0, 0.0, 40 * size)];
+            assert_eq!(draw(&corner), "UR", "at {size}×");
+        }
+    }
+
+    #[test]
+    fn a_wiggle_before_a_long_line_is_absorbed() {
+        assert_eq!(draw(&[(0.0, 3.0, 13), (3.0, 0.0, 200)]), "R");
+        // A short leg still counts.
+        assert_eq!(draw(&[(0.0, 3.0, 15), (3.0, 0.0, 80)]), "DR");
     }
 
     #[test]

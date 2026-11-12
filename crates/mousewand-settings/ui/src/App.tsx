@@ -340,7 +340,10 @@ function GeneralPage({
         <Row label="Hold still for" hint="Holding still this long makes it a normal press, for dragging">
           {number("holdMs", "ms")}
         </Row>
-        <Row label="Ignore strokes under" hint="Shorter wiggles don't count as a direction">
+        <Row
+          label="Ignore strokes under"
+          hint="Shorter wiggles don't count as a direction, and neither do any under a tenth of the drawing"
+        >
           {number("minSegment", "px")}
         </Row>
         <Row
