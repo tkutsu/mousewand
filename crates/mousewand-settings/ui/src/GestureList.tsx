@@ -165,19 +165,6 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
             onChange={(value) => onChange({ value })}
           />
         )}
-        {g.input === "stroke" && (
-          <Segmented
-            value={continuous ? "repeat" : "oneshot"}
-            options={[
-              ["oneshot", "On Release", "Fires once, when you let go"],
-              ["repeat", "Repeats", "Fires as you go, and again as you keep moving"],
-            ]}
-            onChange={(kind) => {
-              if (kind === (continuous ? "repeat" : "oneshot")) return;
-              onChange(kind === "repeat" ? { kind: "repeat", with: null } : { kind: "oneshot", hold: null });
-            }}
-          />
-        )}
         {continuous && (
           <span className="flex items-center gap-1.5 text-ink-2" title="Fires again each time you move this far">
             every
@@ -189,6 +176,22 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
               onChange={(e) => onChange({ step: Number(e.target.value) || null })}
             />
             px
+          </span>
+        )}
+        {g.input === "stroke" && (
+          // Last and at the far end, so it stays put as what's before it changes.
+          <span className="ml-auto pl-6">
+            <Segmented
+              value={continuous ? "repeat" : "oneshot"}
+              options={[
+                ["oneshot", "On Release", "Fires once, when you let go"],
+                ["repeat", "Repeats", "Fires as you go, and again as you keep moving"],
+              ]}
+              onChange={(kind) => {
+                if (kind === (continuous ? "repeat" : "oneshot")) return;
+                onChange(kind === "repeat" ? { kind: "repeat", with: null } : { kind: "oneshot", hold: null });
+              }}
+            />
           </span>
         )}
       </Line>
@@ -212,7 +215,6 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
           />
           {canKeepDown && (
             <span className="flex items-center gap-2">
-              <span className="text-[12px] text-ink-3">keep down</span>
               <Toggles
                 values={kept}
                 options={MODIFIERS.map((m) => ({
@@ -227,6 +229,7 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
                   onChange(hold.length ? { kind: "hold", hold: hold.join("+") } : { kind: "repeat", hold: null });
                 }}
               />
+              <span className="text-[12px] text-ink-3">held</span>
             </span>
           )}
           {g.steps.length > 1 && (
@@ -362,11 +365,14 @@ const STEP_TIPS: Record<Step["action"], string> = {
   wait: "Pauses before the next step",
 };
 
-/** One line of a gesture: a quiet word, then its controls, wrapping unless `nowrap`. */
+/**
+ * One line of a gesture: a quiet word, then its controls, wrapping unless
+ * `nowrap`. The word stays level with the first line of controls.
+ */
 function Line({ label, nowrap, children }: { label: string; nowrap?: boolean; children: ReactNode }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-16 shrink-0 text-[12px] text-ink-2">{label}</span>
+    <div className="flex items-start gap-2">
+      <span className="flex h-7 w-16 shrink-0 items-center text-[12px] text-ink-2">{label}</span>
       <div className={`flex min-w-0 flex-1 items-center gap-2 ${nowrap ? "" : "flex-wrap"}`}>{children}</div>
     </div>
   );
