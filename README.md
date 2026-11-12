@@ -239,6 +239,14 @@ fade_ms = 400         # fade after release
 glow = 0.9            # 0 is a plain line
 ```
 
+For a gradient, list colors from head to tail:
+
+```toml
+color = ["#ffd36e", "#ff8a5c", "#e85d8a", "#7b4bb7"]
+```
+
+The examples include ember, laser, sakura, mint, rainbow, sunset and fire.
+
 ### Using the selected text
 
 A command that mentions `$MOUSEWAND_SELECTION` gets the text you last selected in it, read as the gesture fires. That's the primary selection, which selecting text sets without copying it, from whichever window you selected in. mousewand reads it with `wl-paste` on Wayland and `xclip` on X11, so one of them has to be installed.

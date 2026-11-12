@@ -1,0 +1,7 @@
+# A thin red pointer line that's gone almost as soon as it's drawn.
+color = "#ff3b30"
+rejected = "#7f8ca3"
+width = 14
+life_ms = 350
+fade_ms = 250
+glow = 0.5

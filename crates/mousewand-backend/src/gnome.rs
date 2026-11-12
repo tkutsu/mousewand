@@ -312,7 +312,8 @@ impl Trail for GnomeTrail {
 
     fn set_theme(&self, theme: Theme) {
         let json = serde_json::json!({
-            "color": theme.color.0,
+            // Not "color", which held one color up to extension version 3.
+            "colors": theme.color.0.iter().map(|c| c.0).collect::<Vec<_>>(),
             "rejected": theme.rejected.0,
             "width": theme.width,
             "lifeMs": theme.life_ms,

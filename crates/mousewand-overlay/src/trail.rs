@@ -24,8 +24,9 @@ pub struct Vertex {
 
 /// How to paint one frame.
 #[derive(Clone, Copy, Debug)]
-pub struct Style {
-    pub color: [f32; 3],
+pub struct Style<'a> {
+    /// From head to tail, at least one.
+    pub colors: &'a [[f32; 3]],
     pub glow: f32,
     /// Scales every alpha, for the fade after release.
     pub fade: f32,
@@ -33,6 +34,21 @@ pub struct Style {
     pub width: f32,
     /// How long a point stays on screen, in seconds.
     pub life: f32,
+}
+
+impl Style<'_> {
+    /// The color at `life`: the first at the head (1), blending evenly
+    /// through the rest to the last at the tail (0).
+    pub fn color(&self, life: f32) -> [f32; 3] {
+        let last = self.colors.len() - 1;
+        if last == 0 {
+            return self.colors[0];
+        }
+        let x = (1.0 - life).clamp(0.0, 1.0) * last as f32;
+        let i = (x as usize).min(last - 1);
+        let (a, b, f) = (self.colors[i], self.colors[i + 1], x - i as f32);
+        std::array::from_fn(|c| a[c] + (b[c] - a[c]) * f)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -89,7 +105,7 @@ impl Trail {
                     pos: clip(p.x + nx * half * side, p.y + ny * half * side),
                     edge: side,
                     alpha,
-                    color: style.color,
+                    color: style.color(life),
                     glow: style.glow,
                 });
             }
@@ -141,7 +157,7 @@ impl Trail {
             pos: clip(x, y),
             edge,
             alpha: life * style.fade,
-            color: style.color,
+            color: style.color(life),
             glow: style.glow,
         };
         // A strip alternating rim and centre: every other triangle is
@@ -177,7 +193,7 @@ pub fn ring((cx, cy): (f32, f32), age: f32, (width, height): (f32, f32), style: 
                     pos: clip(cx + cos * r, cy + sin * r),
                     edge: side,
                     alpha,
-                    color: style.color,
+                    color: style.color(1.0),
                     glow: style.glow,
                 }
             })
@@ -190,7 +206,7 @@ mod tests {
     use super::*;
 
     const STYLE: Style = Style {
-        color: [1.0; 3],
+        colors: &[[1.0; 3]],
         glow: 0.6,
         fade: 1.0,
         width: 26.0,
@@ -208,6 +224,19 @@ mod tests {
         let width = |i: usize| (mesh[i * 2].pos[1] - mesh[i * 2 + 1].pos[1]).abs();
         assert!(width(9) > width(5) && width(5) > width(1));
         assert!(mesh[19].alpha > mesh[0].alpha);
+    }
+
+    #[test]
+    fn colors_blend_from_head_to_tail() {
+        let style = Style {
+            colors: &[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            ..STYLE
+        };
+        assert_eq!(style.color(1.0), [1.0, 0.0, 0.0]);
+        assert_eq!(style.color(0.5), [0.0, 1.0, 0.0]);
+        assert_eq!(style.color(0.0), [0.0, 0.0, 1.0]);
+        assert_eq!(style.color(0.75), [0.5, 0.5, 0.0]);
+        assert_eq!(STYLE.color(0.3), [1.0; 3]);
     }
 
     #[test]
