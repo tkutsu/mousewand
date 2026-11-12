@@ -76,7 +76,10 @@ impl Daemon {
                 self.run(|s| s.stroke(&stroke));
                 self.show_hint(false);
             }
-            Output::Motion(dx, dy) => self.run(|s| s.motion(dx, dy)),
+            Output::Motion(dx, dy) => {
+                self.overlay(|o| o.moved(dx, dy));
+                self.run(|s| s.motion(dx, dy));
+            }
             Output::Still => self.still(),
             Output::Wheel(wheel) => self.run(|s| s.wheel(wheel)),
             Output::Click(button) => self.run(|s| s.click(button)),

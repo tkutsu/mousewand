@@ -38,13 +38,16 @@ impl Reporter {
 }
 
 /// Finds the topmost normal window under the cursor on the current desktop.
+/// KWin counts a layer surface whose namespace it doesn't know as a normal
+/// window, mousewand's own trail included, so windows of mousewand's own
+/// process (`SELF`) don't count.
 const TARGET: &str = r#"
 const p = workspace.cursorPos;
 const order = workspace.stackingOrder;
 let found = null;
 for (let i = order.length - 1; i >= 0; i--) {
     const w = order[i];
-    if (!(w.normalWindow || w.dialog) || w.minimized) continue;
+    if (!(w.normalWindow || w.dialog) || w.minimized || w.pid === SELF) continue;
     if (!w.onAllDesktops && !w.desktops.includes(workspace.currentDesktop)) continue;
     const g = w.frameGeometry;
     if (p.x >= g.x && p.x < g.x + g.width && p.y >= g.y && p.y < g.y + g.height) {
@@ -153,7 +156,8 @@ impl KWin {
 
 impl Backend for KWin {
     fn pointer_target(&self) -> anyhow::Result<Target> {
-        let report: Report = serde_json::from_str(&self.run(TARGET)?)?;
+        let script = TARGET.replace("SELF", &std::process::id().to_string());
+        let report: Report = serde_json::from_str(&self.run(&script)?)?;
         let nonempty = |s: String| (!s.is_empty()).then_some(s);
         Ok(Target {
             window: nonempty(report.id).map(|id| Window {
