@@ -49,14 +49,14 @@ fn toml_files(dir: &Path) -> anyhow::Result<Vec<(String, String)>> {
     Ok(files)
 }
 
-/// `themes/<name>.toml`. "default" is built in, unless that file exists.
+/// `themes/<name>.toml`, else the built-in theme of that name.
 fn theme(dir: &Path, name: &str) -> anyhow::Result<Theme> {
     let path = dir.join("themes").join(format!("{name}.toml"));
     let text = match std::fs::read_to_string(&path) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound && name == "default" => return Ok(Theme::default()),
-        other => other.with_context(|| format!("reading theme {}", path.display()))?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        other => Some(other.with_context(|| format!("reading theme {}", path.display()))?),
     };
-    Theme::parse(name, &text).map_err(anyhow::Error::msg)
+    Theme::load(name, text.as_deref()).map_err(anyhow::Error::msg)
 }
 
 fn read_optional(path: &Path) -> anyhow::Result<String> {

@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use mousewand_core::config::{SETTINGS_CLASSES, toml_error};
+use mousewand_core::config::{BUILT_IN_THEMES, SETTINGS_CLASSES, toml_error};
 use mousewand_core::shape::Shape;
 use mousewand_core::{Config, HintStyle, Input, Theme};
 use serde::{Deserialize, Serialize};
@@ -305,17 +305,20 @@ impl Dir {
         std::fs::remove_file(&path).map_err(|e| format!("removing {}: {e}", path.display()))
     }
 
+    /// "default", then the built-in themes and the files, by name.
     fn themes(&self) -> Vec<String> {
-        let mut themes = vec!["default".to_string()];
+        let mut themes: Vec<String> = BUILT_IN_THEMES.iter().map(|(name, _)| name.to_string()).collect();
         if let Ok(entries) = std::fs::read_dir(self.0.join("themes")) {
             for path in entries.filter_map(|e| Some(e.ok()?.path())) {
-                let stem = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
-                if path.extension().is_some_and(|ext| ext == "toml") && stem != "default" {
-                    themes.push(stem);
+                if path.extension().is_some_and(|ext| ext == "toml") {
+                    themes.push(path.file_stem().unwrap_or_default().to_string_lossy().into_owned());
                 }
             }
         }
-        themes[1..].sort();
+        themes.retain(|t| t != "default");
+        themes.sort();
+        themes.dedup();
+        themes.insert(0, "default".to_string());
         themes
     }
 
@@ -338,12 +341,13 @@ impl Dir {
             writes.push((path, text));
         }
         let config = Config::parse(&main, &apps, &toml_files(&self.0.join("shapes"))?)?;
-        if config.settings.theme != "default" {
-            let name = &config.settings.theme;
-            let path = self.0.join("themes").join(format!("{name}.toml"));
-            let text = std::fs::read_to_string(&path).map_err(|e| format!("theme {name:?}: {e}"))?;
-            Theme::parse(name, &text)?;
-        }
+        let name = &config.settings.theme;
+        let path = self.0.join("themes").join(format!("{name}.toml"));
+        let text = match std::fs::read_to_string(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            other => Some(other.map_err(|e| format!("reading {}: {e}", path.display()))?),
+        };
+        Theme::load(name, text.as_deref())?;
         write(&self.main_path(), &main)?;
         for (path, text) in writes {
             write(&path, &text)?;

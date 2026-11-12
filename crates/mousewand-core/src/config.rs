@@ -64,7 +64,29 @@ impl Default for Theme {
     }
 }
 
+/// The themes mousewand ships, besides "default", as their files would be.
+pub const BUILT_IN_THEMES: &[(&str, &str)] = &[
+    ("ember", include_str!("../themes/ember.toml")),
+    ("fire", include_str!("../themes/fire.toml")),
+    ("laser", include_str!("../themes/laser.toml")),
+    ("mint", include_str!("../themes/mint.toml")),
+    ("rainbow", include_str!("../themes/rainbow.toml")),
+    ("sakura", include_str!("../themes/sakura.toml")),
+    ("sunset", include_str!("../themes/sunset.toml")),
+];
+
 impl Theme {
+    /// The theme called `name`, from the text of `themes/<name>.toml` if
+    /// that file exists, else built in.
+    pub fn load(name: &str, file: Option<&str>) -> Result<Theme, String> {
+        let built_in = || BUILT_IN_THEMES.iter().find(|(n, _)| *n == name).map(|(_, text)| *text);
+        match file.or_else(built_in) {
+            Some(text) => Theme::parse(name, text),
+            None if name == "default" => Ok(Theme::default()),
+            None => Err(format!("themes/{name}.toml: no such theme")),
+        }
+    }
+
     /// Parses `themes/<name>.toml`.
     pub fn parse(name: &str, text: &str) -> Result<Theme, String> {
         let file = format!("themes/{name}.toml");
@@ -169,7 +191,7 @@ pub struct Settings {
     pub min_segment: f64,
     /// Only grab mice whose name contains one of these. Empty grabs all mice.
     pub devices: Vec<String>,
-    /// The trail theme: a file in `themes/` without `.toml`, or "default".
+    /// The trail theme: a built-in one, or a file in `themes/` without `.toml`.
     pub theme: String,
     /// The button for the global gestures alone, from `[global]`.
     #[serde(skip)]
@@ -1299,17 +1321,12 @@ mod tests {
         );
         assert!(Theme::parse("x", "color = []").unwrap_err().contains("list"));
         assert!(Theme::parse("x", "color = 3").unwrap_err().contains("list"));
-        for (name, text) in [
-            ("ember", include_str!("../../../examples/themes/ember.toml")),
-            ("fire", include_str!("../../../examples/themes/fire.toml")),
-            ("laser", include_str!("../../../examples/themes/laser.toml")),
-            ("mint", include_str!("../../../examples/themes/mint.toml")),
-            ("rainbow", include_str!("../../../examples/themes/rainbow.toml")),
-            ("sakura", include_str!("../../../examples/themes/sakura.toml")),
-            ("sunset", include_str!("../../../examples/themes/sunset.toml")),
-        ] {
-            Theme::parse(name, text).unwrap();
+        for (name, _) in BUILT_IN_THEMES {
+            Theme::load(name, None).unwrap();
         }
+        assert_eq!(Theme::load("default", None), Ok(Theme::default()));
+        assert_eq!(Theme::load("fire", Some("width = 9")).unwrap().width, 9.0);
+        assert!(Theme::load("nope", None).unwrap_err().contains("no such theme"));
         assert!(Theme::parse("x", "width = 0").is_err());
         assert!(Theme::parse("x", "colour = \"#ffffff\"").is_err());
     }

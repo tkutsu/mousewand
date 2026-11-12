@@ -83,11 +83,12 @@ export default function Shapes({ shapes, usedWhere, onChanged }: Props) {
                 <span>{shape.name}</span>
                 <span className="text-[11px] text-ink-2">shapes/{shape.name}.toml</span>
               </div>
-              <button className="button" onClick={() => setDrawing(shape.name)}>
+              <button className="button" title="Teach it again" onClick={() => setDrawing(shape.name)}>
                 Redraw
               </button>
               <button
                 className={`button ${removing === shape.name ? "recording" : ""}`}
+                title="Click twice to remove"
                 onClick={() => remove(shape.name)}
                 onBlur={() => setRemoving(null)}
               >

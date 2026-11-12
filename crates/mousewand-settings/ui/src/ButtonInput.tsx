@@ -54,6 +54,7 @@ export default function ButtonInput({ value, onChange }: { value: string; onChan
     <div className="flex gap-1.5">
       <select
         className="field min-w-0 flex-1"
+        title="The mouse button you hold to draw"
         value={value}
         disabled={detecting}
         onChange={(e) => onChange(e.target.value)}
