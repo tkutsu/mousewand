@@ -1,0 +1,6 @@
+# Northern lights: green into blue and violet.
+color = ["#b6ffcf", "#4ef0c0", "#3aa8ff", "#8a5cff"]
+width = 30
+life_ms = 700
+fade_ms = 400
+glow = 0.8

@@ -5,7 +5,7 @@ import { problems } from "./check";
 import { ShapeSelect, StrokeInput } from "./Drawn";
 import { arrows, comboOf } from "./keys";
 import ShapePad from "./ShapePad";
-import { Problem, Section, ShapeThumb, Toggles } from "./ui";
+import { Problem, Section, Segmented, ShapeThumb, Toggles } from "./ui";
 
 type Props = {
   title: string;
@@ -156,28 +156,27 @@ function Row({ gesture: g, problem, shapes, readyMade, keyboard, onChange, onNew
           </select>
         )}
         {g.input === "click" && (
-          <select
-            className="field"
-            title="The button to click while holding the trigger"
+          <Segmented
             value={g.value}
-            onChange={(e) => onChange({ value: e.target.value })}
-          >
-            <option value="left">Left</option>
-            <option value="right">Right</option>
-          </select>
+            options={[
+              ["left", "Left", "A left click while holding the trigger"],
+              ["right", "Right", "A right click while holding the trigger"],
+            ]}
+            onChange={(value) => onChange({ value })}
+          />
         )}
         {g.input === "stroke" && (
-          <select
-            className="field"
-            title={continuous ? "Fires as you go, and again as you keep moving" : "Fires once, when you let go"}
+          <Segmented
             value={continuous ? "repeat" : "oneshot"}
-            onChange={(e) =>
-              onChange(e.target.value === "repeat" ? { kind: "repeat", with: null } : { kind: "oneshot", hold: null })
-            }
-          >
-            <option value="oneshot">On Release</option>
-            <option value="repeat">Repeats</option>
-          </select>
+            options={[
+              ["oneshot", "On Release", "Fires once, when you let go"],
+              ["repeat", "Repeats", "Fires as you go, and again as you keep moving"],
+            ]}
+            onChange={(kind) => {
+              if (kind === (continuous ? "repeat" : "oneshot")) return;
+              onChange(kind === "repeat" ? { kind: "repeat", with: null } : { kind: "oneshot", hold: null });
+            }}
+          />
         )}
         {continuous && (
           <span className="flex items-center gap-1.5 text-ink-2" title="Fires again each time you move this far">

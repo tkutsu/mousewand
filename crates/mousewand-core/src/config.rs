@@ -65,14 +65,37 @@ impl Default for Theme {
 }
 
 /// The themes mousewand ships, besides "default", as their files would be.
+/// The settings app lists them in this order, so alike ones sit together.
 pub const BUILT_IN_THEMES: &[(&str, &str)] = &[
+    // Cool
+    ("ocean", include_str!("../themes/ocean.toml")),
+    ("aurora", include_str!("../themes/aurora.toml")),
+    ("mint", include_str!("../themes/mint.toml")),
+    ("matrix", include_str!("../themes/matrix.toml")),
+    // Warm
     ("ember", include_str!("../themes/ember.toml")),
     ("fire", include_str!("../themes/fire.toml")),
-    ("laser", include_str!("../themes/laser.toml")),
-    ("mint", include_str!("../themes/mint.toml")),
-    ("rainbow", include_str!("../themes/rainbow.toml")),
-    ("sakura", include_str!("../themes/sakura.toml")),
     ("sunset", include_str!("../themes/sunset.toml")),
+    ("gold", include_str!("../themes/gold.toml")),
+    // Soft
+    ("sakura", include_str!("../themes/sakura.toml")),
+    ("cotton-candy", include_str!("../themes/cotton-candy.toml")),
+    ("lavender", include_str!("../themes/lavender.toml")),
+    // Lines
+    ("laser", include_str!("../themes/laser.toml")),
+    ("ink", include_str!("../themes/ink.toml")),
+    // Bright
+    ("neon", include_str!("../themes/neon.toml")),
+    ("rainbow", include_str!("../themes/rainbow.toml")),
+    // Flags
+    ("pride", include_str!("../themes/pride.toml")),
+    ("trans", include_str!("../themes/trans.toml")),
+    // Desktop color schemes
+    ("catppuccin", include_str!("../themes/catppuccin.toml")),
+    ("dracula", include_str!("../themes/dracula.toml")),
+    ("gruvbox", include_str!("../themes/gruvbox.toml")),
+    ("nord", include_str!("../themes/nord.toml")),
+    ("tokyo-night", include_str!("../themes/tokyo-night.toml")),
 ];
 
 impl Theme {

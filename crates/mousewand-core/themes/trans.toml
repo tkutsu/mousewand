@@ -1,0 +1,7 @@
+# The transgender flag: blue, pink, white, pink, blue.
+color = ["#5bcefa", "#f5a9b8", "#ffffff", "#f5a9b8", "#5bcefa"]
+rejected = "#7f8ca3"
+width = 30
+life_ms = 700
+fade_ms = 400
+glow = 0.6
