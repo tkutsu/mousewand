@@ -1,5 +1,5 @@
-// The General page's section about this app: the gesture that opens it, and
-// the ones that work in its window. Those are ordinary gestures in `apps/mousewand-settings.toml`
+// The Settings Window page: the gesture that opens this app, and the ones
+// that work in its window. Those are ordinary gestures in `apps/mousewand-settings.toml`
 // that press the window's own shortcuts.
 
 import { useState } from "react";
@@ -74,7 +74,7 @@ export default function SettingsGestures({ settings, app, shapes, onSettings, on
   const open = settings.openSettings;
   return (
     <Section
-      title="Mousewand App"
+      title="Gestures"
       action={
         <button className="button plain h-6 px-2 text-accent" onClick={suggest}>
           Use Suggested

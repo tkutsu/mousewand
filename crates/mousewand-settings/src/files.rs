@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use mousewand_core::config::{BUILT_IN_THEMES, SETTINGS_CLASSES, toml_error};
+use mousewand_core::config::{BUILT_IN_THEMES, GAME_CLASSES, Off, SETTINGS_CLASSES, toml_error};
 use mousewand_core::shape::Shape;
 use mousewand_core::{Config, HintStyle, Input, Theme};
 use serde::{Deserialize, Serialize};
@@ -58,6 +58,24 @@ pub struct Settings {
     /// The stroke or shape that opens this app.
     pub open_settings: Drawn,
     pub hint: Hint,
+    /// Where gestures are off: games, and these window class patterns.
+    pub off: OffList,
+}
+
+/// `[off]`, as the form edits it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OffList {
+    pub games: bool,
+    pub classes: Vec<String>,
+}
+
+impl From<&Off> for OffList {
+    fn from(off: &Off) -> OffList {
+        OffList {
+            games: off.games,
+            classes: off.classes.clone(),
+        }
+    }
 }
 
 /// The `[hint]` keys the form edits. Others there, like `margin`, stay.
@@ -145,6 +163,8 @@ pub struct State {
     /// The built-in shapes, then the drawn ones.
     pub shapes: Vec<ShapeInfo>,
     pub app_shortcuts: Vec<AppShortcuts>,
+    /// The patterns `[off]`'s `games` stands for.
+    pub game_classes: Vec<String>,
 }
 
 impl App {
@@ -217,6 +237,7 @@ impl Dir {
                 value: open_settings.1,
             },
             hint: Hint::from(&config.hint),
+            off: OffList::from(&config.off),
         };
         let is_settings = |c: &str| SETTINGS_CLASSES.iter().any(|s| s.eq_ignore_ascii_case(c));
         let app = match class.filter(|c| !c.is_empty() && !is_settings(c)) {
@@ -244,6 +265,7 @@ impl Dir {
                 })
                 .collect(),
             app_shortcuts: app_shortcuts()?,
+            game_classes: GAME_CLASSES.map(String::from).to_vec(),
         })
     }
 
@@ -545,6 +567,12 @@ fn edit_main(text: &str, settings: &Settings, global: &[Gesture]) -> Result<Stri
         table["failed"] = value(&hint.failed);
         table["background"] = value(&hint.background);
         table["radius"] = number(hint.radius);
+    }
+    let off = &settings.off;
+    if *off != OffList::from(&Off::default()) || doc.contains_key("off") {
+        let table = &mut doc["off"];
+        table["games"] = value(off.games);
+        table["match"] = value(off.classes.iter().collect::<Array>());
     }
     set_gestures(&mut doc, global);
     Ok(doc.to_string())
@@ -902,6 +930,23 @@ mod tests {
 
         settings.hint.position = "sideways".into();
         assert!(dir.save(&settings, &[], &[]).unwrap_err().contains("bad position"));
+    }
+
+    #[test]
+    fn off_round_trip() {
+        let (dir, path) = dir("off");
+        let mut settings = dir.load(None).unwrap().settings;
+        assert!(settings.off.games && settings.off.classes.is_empty());
+        dir.save(&settings, &[], &[]).unwrap();
+        let main = std::fs::read_to_string(path.join("config.toml")).unwrap();
+        assert!(!main.contains("[off]"), "the default isn't written: {main}");
+
+        settings.off = OffList {
+            games: false,
+            classes: vec!["blender".into(), "org.gnome.*".into()],
+        };
+        dir.save(&settings, &[], &[]).unwrap();
+        assert_eq!(dir.load(None).unwrap().settings.off, settings.off);
     }
 
     #[test]
