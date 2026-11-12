@@ -7,7 +7,7 @@ hold_ms = 300          # holding still this long makes it a normal press
 cancel_ms = 0          # holding still this long mid-stroke cancels it, e.g. 700; 0 never does
 min_segment = 30       # shorter strokes are ignored as noise
 devices = []           # only grab mice whose name contains one of these
-theme = "default"      # or a file in themes/, without .toml
+theme = "default"      # a built-in theme, or a file in themes/ without .toml
 
 # Strokes: U D L R, plus diagonals as numpad digits: 7 ↖  9 ↗  1 ↙  3 ↘
 # `name` is what hints show; without it they show the keys or command.
