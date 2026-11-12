@@ -340,7 +340,9 @@ impl Dir {
             .map(|name| {
                 let theme = self.theme(&name).ok();
                 ThemeInfo {
-                    colors: theme.as_ref().map_or(Vec::new(), |t| t.color.0.iter().map(|c| c.0).collect()),
+                    colors: theme
+                        .as_ref()
+                        .map_or(Vec::new(), |t| t.color.0.iter().map(|c| c.0).collect()),
                     width: theme.as_ref().map_or(0.0, |t| t.width),
                     glow: theme.as_ref().map_or(0.0, |t| t.glow),
                     name,
@@ -681,7 +683,8 @@ mod tests {
         });
         let mut settings = state.settings.clone();
         settings.cancel_ms = 700;
-        dir.save(&settings, &[copy.clone()], std::slice::from_ref(&app)).unwrap();
+        dir.save(&settings, &[copy.clone()], std::slice::from_ref(&app))
+            .unwrap();
 
         let main = std::fs::read_to_string(path.join("config.toml")).unwrap();
         assert!(main.contains("with = \"shift\""), "{main}");
