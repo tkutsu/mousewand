@@ -181,7 +181,7 @@ impl Daemon {
             false => self.config.gestures_for(&window.class),
         };
         self.active = Some(Active {
-            session: Session::new(gestures),
+            session: Session::new(gestures, self.config.settings.stroke_tolerance),
             window,
             focused: global,
             stroke: Stroke::default(),

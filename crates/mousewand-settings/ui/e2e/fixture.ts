@@ -20,6 +20,7 @@ export const STATE: State = {
     holdMs: 300,
     cancelMs: 0,
     minSegment: 30,
+    strokeTolerance: 30,
     theme: "default",
     openSettings: { input: "shape", value: "circle" },
     hint: {
