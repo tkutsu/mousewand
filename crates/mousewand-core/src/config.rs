@@ -656,8 +656,14 @@ pub struct HintStyle {
     pub font: String,
     /// Text size, in logical px. Arrows match it.
     pub size: f32,
+    /// The text of the next moves and of the gesture's name among them, in
+    /// logical px.
+    pub next_size: f32,
     #[serde(deserialize_with = "parsed")]
     pub text: Rgba,
+    /// The next moves' text.
+    #[serde(deserialize_with = "parsed")]
+    pub next_text: Rgba,
     /// The arrows.
     #[serde(deserialize_with = "parsed")]
     pub glyph: Rgba,
@@ -681,7 +687,9 @@ impl Default for HintStyle {
             margin: 64.0,
             font: "sans-serif".into(),
             size: 17.0,
+            next_size: 14.0,
             text: Rgba([0.95, 0.95, 0.97, 1.0]),
+            next_text: Rgba([0.557, 0.557, 0.576, 1.0]),
             glyph: Rgba([0.62, 0.77, 1.0, 1.0]),
             failed: Rgba([1.0, 0.35, 0.35, 1.0]),
             background: Rgba([0.11, 0.12, 0.15, 1.0]),
@@ -765,8 +773,8 @@ impl HintStyle {
         if !(0.0..=1.0).contains(&self.opacity) {
             return Err(format!("hint opacity must be from 0 to 1, not {}", self.opacity));
         }
-        if self.size <= 0.0 {
-            return Err("hint size must be positive".into());
+        if self.size <= 0.0 || self.next_size <= 0.0 {
+            return Err("hint sizes must be positive".into());
         }
         if self.margin < 0.0 || self.padding < 0.0 || self.radius < 0.0 {
             return Err("hint margin, padding and radius can't be negative".into());
@@ -1502,6 +1510,16 @@ mod tests {
                 .contains("opacity")
         );
         assert!(Config::parse("[hint]\ncolour = \"#fff\"", &[], &[]).is_err());
+        assert!(
+            Config::parse("[hint]\nnext_size = 0", &[], &[])
+                .unwrap_err()
+                .contains("sizes")
+        );
+        let next = Config::parse("[hint]\nnext_size = 12\nnext_text = \"#808080\"", &[], &[]).unwrap();
+        assert_eq!(
+            (next.hint.next_size, next.hint.next_text.to_string().as_str()),
+            (12.0, "#808080")
+        );
         assert_eq!(
             "#ff000080".parse::<Rgba>().unwrap(),
             Rgba([1.0, 0.0, 0.0, 128.0 / 255.0])

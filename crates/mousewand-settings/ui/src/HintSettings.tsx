@@ -1,18 +1,18 @@
-// The hint: on or off, how it looks, and an example drawn the way the
-// overlay draws it.
+// The hint: on or off, how it looks, and examples drawn the way the
+// overlay draws them.
 
-import { useState, type CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import type { Hint } from "./api";
-import { Row, Section, Segmented, Switch } from "./ui";
+import { Row, Section, Switch } from "./ui";
 
-type Look = Pick<Hint, "text" | "glyph" | "background" | "radius">;
+type Look = Pick<Hint, "text" | "nextText" | "glyph" | "background" | "radius">;
 
 /** Ready-made looks. Dark is the built-in default, as the daemon writes it. */
 const STYLES: [string, Look][] = [
-  ["Dark", { text: "#f2f2f7", glyph: "#9ec4ff", background: "#1c1f26", radius: 14 }],
-  ["Light", { text: "#1d1d1f", glyph: "#007aff", background: "#f5f5f7", radius: 14 }],
-  ["Glass", { text: "#ffffff", glyph: "#ffffff", background: "#00000080", radius: 20 }],
-  ["Ember", { text: "#fff4ec", glyph: "#ff8a3d", background: "#2a1a12", radius: 8 }],
+  ["Dark", { text: "#f2f2f7", nextText: "#8e8e93", glyph: "#9ec4ff", background: "#1c1f26", radius: 14 }],
+  ["Light", { text: "#1d1d1f", nextText: "#8e8e93", glyph: "#007aff", background: "#f5f5f7", radius: 14 }],
+  ["Glass", { text: "#ffffff", nextText: "#ffffffa6", glyph: "#ffffff", background: "#00000080", radius: 20 }],
+  ["Ember", { text: "#fff4ec", nextText: "#a8968a", glyph: "#ff8a3d", background: "#2a1a12", radius: 8 }],
 ];
 
 const VERTICAL = ["top", "center", "bottom"] as const;
@@ -40,12 +40,11 @@ function dim(color: string, by: number): string {
 
 export default function HintSettings({ hint, onChange }: { hint: Hint; onChange: (hint: Hint) => void }) {
   const set = (patch: Partial<Hint>) => onChange({ ...hint, ...patch });
-  const [example, setExample] = useState<"drawing" | "failed">("drawing");
   const [v, h] = cell(hint.position);
   const chosen = STYLES.find(([, look]) => (Object.keys(look) as (keyof Look)[]).every((k) => look[k] === hint[k]));
 
   /** A color picker that keeps the color's alpha. */
-  const color = (key: "text" | "glyph" | "failed" | "background", label: string, title: string) => (
+  const color = (key: "text" | "nextText" | "glyph" | "failed" | "background", label: string, title: string) => (
     <label className="flex items-center gap-1.5 text-[12px] text-ink-2" title={title}>
       <input
         type="color"
@@ -57,22 +56,34 @@ export default function HintSettings({ hint, onChange }: { hint: Hint; onChange:
     </label>
   );
 
+  /** A size in px, with what it sizes before it. */
+  const size = (key: "size" | "nextSize", label: string, title: string) => (
+    <label className="flex items-center gap-1.5 text-[12px] text-ink-2" title={title}>
+      {label}
+      <input
+        className="field w-16 text-right"
+        type="number"
+        min={8}
+        value={hint[key]}
+        onChange={(e) => set({ [key]: Number(e.target.value) })}
+      />
+      px
+    </label>
+  );
+
   return (
     <Section title="Hint" note="Hints show the stroke as you draw it, and what it does.">
       <Row label="Show a hint while drawing">
         <Switch label="Show a hint" on={hint.enabled} onChange={(enabled) => set({ enabled })} />
       </Row>
       <div className={`flex flex-col divide-y divide-line transition-opacity ${hint.enabled ? "" : "opacity-50"}`}>
-        <div className="flex flex-col items-center gap-2 p-3">
-          <Preview hint={hint} failed={example === "failed"} />
-          <Segmented
-            value={example}
-            options={[
-              ["drawing", "Drawing"],
-              ["failed", "No match"],
-            ]}
-            onChange={setExample}
-          />
+        <div className="grid grid-cols-2 gap-3 p-3">
+          {(["Drawing", "No match"] as const).map((example) => (
+            <figure key={example} className="flex flex-col items-center gap-1.5">
+              <Preview hint={hint} failed={example === "No match"} />
+              <figcaption className="text-[12px] text-ink-2">{example}</figcaption>
+            </figure>
+          ))}
         </div>
         <Row label="Style">
           <div className="flex gap-1.5">
@@ -95,6 +106,7 @@ export default function HintSettings({ hint, onChange }: { hint: Hint; onChange:
         </Row>
         <Row label="Colors">
           {color("text", "Text", "What the gesture does")}
+          {color("nextText", "Next moves", "What the stroke could still become")}
           {color("glyph", "Arrows", "The stroke so far")}
           {color("failed", "Failed", "The arrows when nothing matches")}
           {color("background", "Background", "Behind it all; its see-through part is kept")}
@@ -121,15 +133,8 @@ export default function HintSettings({ hint, onChange }: { hint: Hint; onChange:
           </div>
         </Row>
         <Row label="Size">
-          <input
-            className="field w-20 text-right"
-            type="number"
-            min={8}
-            title="Text size"
-            value={hint.size}
-            onChange={(e) => set({ size: Number(e.target.value) })}
-          />
-          <span className="w-5 text-ink-2">px</span>
+          {size("size", "Stroke", "The arrows of the stroke so far")}
+          {size("nextSize", "Next moves", "The gesture's name and what the stroke could still become")}
         </Row>
         <Row label="Corner radius">
           <input
@@ -177,28 +182,31 @@ const PADDING = 14;
 const MARGIN = 20;
 
 /**
- * A mock screen with the hint for a stroke that's half drawn. As on screen,
- * the main line goes where the position says, and the next moves hang off
- * it: above at the bottom, below elsewhere.
+ * A mock screen with the hint for a stroke that's half drawn, or one that
+ * matches nothing. As on screen, the main line is only the stroke and goes
+ * where the position says; the gesture's name and the next moves are listed
+ * beside it, above at the bottom and below elsewhere.
  */
 function Preview({ hint, failed }: { hint: Hint; failed: boolean }) {
-  const size = hint.size;
-  const small = size * 0.82;
+  const { size, nextSize } = hint;
+  type Line = { stroke: string; label?: string; size: number; arrow: string; text?: string; listed: boolean };
   // A stroke that can't become any gesture: only its arrows, in the failed color.
-  const main = failed
-    ? { stroke: "DL", label: "", size, arrow: dim(hint.failed, 1), text: "", next: false }
-    : { stroke: "D", label: "Reload", size, arrow: dim(hint.glyph, 1), text: dim(hint.text, 0.75), next: false };
-  const next = hint.next && !failed
-    ? [
-        { stroke: "R", label: "Close tab" },
-        { stroke: "RU", label: "Reopen closed tab" },
-      ].map((r) => ({ ...r, size: small, arrow: dim(hint.glyph, 0.85), text: dim(hint.text, 0.7), next: true }))
-    : [];
+  const main: Line = { stroke: failed ? "DL" : "D", size, arrow: dim(failed ? hint.failed : hint.glyph, 1), listed: false };
+  const name: Line[] = failed
+    ? []
+    : [{ stroke: "", label: "Reload", size: nextSize, arrow: "", text: dim(hint.text, 0.75), listed: true }];
+  const next: Line[] =
+    hint.next && !failed
+      ? [
+          { stroke: "R", label: "Close tab" },
+          { stroke: "RU", label: "Reopen closed tab" },
+        ].map((r) => ({ ...r, size: nextSize, arrow: dim(hint.glyph, 0.85), text: hint.nextText, listed: true }))
+      : [];
   const [v, h] = cell(hint.position);
   const above = v === 2;
-  const rows = above ? [...next, main] : [main, ...next];
-  // Next moves line their labels up after the longest stroke.
-  const nextArrows = Math.max(0, ...next.map((r) => r.stroke.length * r.size * 1.05));
+  const rows = above ? [...next, ...name, main] : [main, ...name, ...next];
+  // Listed labels line up after the longest of their strokes.
+  const column = Math.max(0, ...next.map((r) => r.stroke.length * r.size * 1.05));
   // The panel the main line alone would make, placed like the real one.
   const mainHeight = size * 1.45 + PADDING * 2;
   const panel: CSSProperties = {
@@ -216,17 +224,19 @@ function Preview({ hint, failed }: { hint: Hint; failed: boolean }) {
       <div className="absolute flex flex-col opacity-90" style={panel}>
         {rows.map((row, i) => (
           <div
-            key={row.stroke}
+            key={i}
             className="flex items-center whitespace-nowrap"
-            style={{ height: row.size * 1.45, marginTop: i > 0 && row.next !== rows[i - 1].next ? size * 0.35 : 0 }}
+            style={{ height: row.size * 1.45, marginTop: i > 0 && row.listed !== rows[i - 1].listed ? size * 0.35 : 0 }}
           >
-            <div className="flex" style={{ width: row.next ? nextArrows : undefined }}>
+            <div className="flex" style={{ width: row.listed ? column : undefined }}>
               {[...row.stroke].map((d, j) => (
                 <Arrow key={j} angle={ANGLES[d]} size={row.size} color={row.arrow} />
               ))}
             </div>
             {row.label && (
-              <span style={{ fontSize: row.size, color: row.text, marginLeft: row.size * 0.45, lineHeight: 1 }}>
+              <span
+                style={{ fontSize: row.size, color: row.text, marginLeft: column > 0 ? row.size * 0.45 : 0, lineHeight: 1 }}
+              >
                 {row.label}
               </span>
             )}
