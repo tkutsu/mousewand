@@ -14,7 +14,7 @@ Changes apply when you save. If a file has an error, mousewand keeps the last wo
 
 The examples set up Firefox, kitty, volume on the wheel, an alt-tab and hints. Their two workspace gestures use Hyprland dispatchers.
 
-```fish
+```sh
 mkdir -p ~/.config/mousewand
 cp -r examples/* ~/.config/mousewand/
 ```
@@ -107,9 +107,9 @@ action = { keys = "ctrl+shift+Tab" }
 
 mousewand needs to read the keyboard to know what's held. It only asks which keys are down at the moment a gesture fires, and never reads what you type, but the access it needs would let any program you run read your typing. That's why this udev rule is separate, and only worth installing if you use `with`:
 
-```fish
+```sh
 sudo cp dist/71-mousewand-keyboard.rules /etc/udev/rules.d/
-sudo udevadm control --reload; and sudo udevadm trigger
+sudo udevadm control --reload&& sudo udevadm trigger
 ```
 
 Being in the `input` group works too.

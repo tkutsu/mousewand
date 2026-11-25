@@ -10,7 +10,7 @@ It runs on Hyprland, KDE Plasma 6, GNOME, sway, niri, COSMIC, labwc and X11, and
 
 You need a recent [Rust](https://rustup.rs) toolchain.
 
-```fish
+```sh
 git clone https://github.com/tkutsu/mousewand
 cd mousewand
 cargo install --path crates/mousewand
@@ -18,10 +18,10 @@ cargo install --path crates/mousewand
 
 mousewand reads your mice and passes their events on through a virtual mouse. Let your user do that without root, then log out and back in once:
 
-```fish
+```sh
 sudo cp dist/70-mousewand.rules /etc/udev/rules.d/
 sudo cp dist/mousewand-uinput.conf /etc/modules-load.d/
-sudo modprobe uinput; and sudo udevadm control --reload; and sudo udevadm trigger
+sudo modprobe uinput&& sudo udevadm control --reload&& sudo udevadm trigger
 ```
 
 ## Run
@@ -30,7 +30,7 @@ Run `mousewand`, hold the middle button and draw. Ctrl+C stops it and gives the 
 
 To start it with your desktop, use the systemd user service:
 
-```fish
+```sh
 mkdir -p ~/.config/systemd/user
 cp dist/mousewand.service ~/.config/systemd/user/
 systemctl --user enable --now mousewand
@@ -48,7 +48,7 @@ end)
 
 Copy the examples to get gestures for Firefox and kitty, volume on the wheel and an alt-tab:
 
-```fish
+```sh
 mkdir -p ~/.config/mousewand
 cp -r examples/* ~/.config/mousewand/
 ```
@@ -69,7 +69,7 @@ Changes apply when you save. Shapes, wheel and click gestures, commands, themes 
 
 The settings app is optional. It needs WebKitGTK (`webkit2gtk-4.1`), Node and pnpm to build:
 
-```fish
+```sh
 pnpm -C crates/mousewand-settings/ui install
 pnpm -C crates/mousewand-settings/ui build
 cargo install --path crates/mousewand-settings
@@ -81,9 +81,9 @@ Draw a circle over a window to open it for that app. It edits the same files and
 
 A gesture with `with = "shift"` only fires while Shift is held. To see which keys are held, mousewand needs this extra rule. It never reads what you type, but the access would let any program you run read your typing, so only install it if you use `with`:
 
-```fish
+```sh
 sudo cp dist/71-mousewand-keyboard.rules /etc/udev/rules.d/
-sudo udevadm control --reload; and sudo udevadm trigger
+sudo udevadm control --reload&& sudo udevadm trigger
 ```
 
 ## Troubleshooting
