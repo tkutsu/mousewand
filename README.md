@@ -21,7 +21,7 @@ mousewand reads your mice and passes their events on through a virtual mouse. Le
 ```sh
 sudo cp dist/70-mousewand.rules /etc/udev/rules.d/
 sudo cp dist/mousewand-uinput.conf /etc/modules-load.d/
-sudo modprobe uinput&& sudo udevadm control --reload&& sudo udevadm trigger
+sudo modprobe uinput && sudo udevadm control --reload && sudo udevadm trigger
 ```
 
 ## Run
@@ -83,7 +83,7 @@ A gesture with `with = "shift"` only fires while Shift is held. To see which key
 
 ```sh
 sudo cp dist/71-mousewand-keyboard.rules /etc/udev/rules.d/
-sudo udevadm control --reload&& sudo udevadm trigger
+sudo udevadm control --reload && sudo udevadm trigger
 ```
 
 ## Troubleshooting

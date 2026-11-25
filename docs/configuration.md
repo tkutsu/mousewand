@@ -109,7 +109,7 @@ mousewand needs to read the keyboard to know what's held. It only asks which key
 
 ```sh
 sudo cp dist/71-mousewand-keyboard.rules /etc/udev/rules.d/
-sudo udevadm control --reload&& sudo udevadm trigger
+sudo udevadm control --reload && sudo udevadm trigger
 ```
 
 Being in the `input` group works too.
